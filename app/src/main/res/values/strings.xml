@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Feedman</string>
+    <string name="login_placeholder_title">ログイン</string>
+    <string name="login_placeholder_body">後続 Issue で Google ログインを実装します。</string>
+    <string name="login_placeholder_button">ログイン（未実装）</string>
+    <string name="timeline_title">すべての新着</string>
+    <string name="timeline_empty">記事がありません</string>
+    <string name="drawer_timeline">すべての新着</string>
+    <string name="drawer_starred">お気に入り（未実装）</string>
+</resources>

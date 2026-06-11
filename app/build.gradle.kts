@@ -1,0 +1,125 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
+}
+
+/**
+ * Default base URL when `feedman.baseUrl` Gradle property is not provided (Req 5.3).
+ * The development server is not yet provisioned for this skeleton; we use a public
+ * example.com URL so that BuildConfig.BASE_URL stays a non-secret, parseable URL.
+ * Override at build time: `./gradlew build -Pfeedman.baseUrl=https://dev.feedman.example.com`
+ */
+val defaultBaseUrl: String = (findProperty("feedman.baseUrl") as String?)
+    ?: "https://dev.feedman.example.com"
+
+/**
+ * Default mockMode when `feedman.mockMode` Gradle property is not provided (Req 5.4).
+ * Skeleton ships with mockMode = false so that the login placeholder screen is the default
+ * entry point (Req 4.5). Override: `-Pfeedman.mockMode=true`.
+ */
+val defaultMockMode: Boolean = (findProperty("feedman.mockMode") as String?)
+    ?.toBoolean() ?: false
+
+android {
+    namespace = "com.feedman.android"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.feedman.android"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0-skeleton"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Req 5.1 / 5.2 / 5.3 / 5.4: surface Gradle properties as BuildConfig fields.
+        buildConfigField("String", "BASE_URL", "\"$defaultBaseUrl\"")
+        buildConfigField("boolean", "MOCK_MODE", defaultMockMode.toString())
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    kotlin {
+        jvmToolchain(17)
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        getByName("main") {
+            kotlin.srcDir("src/main/kotlin")
+        }
+        getByName("test") {
+            kotlin.srcDir("src/test/kotlin")
+        }
+        getByName("androidTest") {
+            kotlin.srcDir("src/androidTest/kotlin")
+        }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
+    packaging {
+        resources.excludes += setOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            "META-INF/LICENSE*",
+            "META-INF/NOTICE*",
+        )
+    }
+}
+
+dependencies {
+    // AndroidX core
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.navigation.compose)
+
+    // Compose BOM-managed
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+
+    // Hilt
+    implementation(libs.hilt.android)
+    implementation(libs.hilt.navigation.compose)
+    ksp(libs.hilt.compiler)
+
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.core)
+
+    // Test
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+}
