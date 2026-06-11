@@ -31,8 +31,64 @@ Retrofit + OkHttp + kotlinx.serialization / Coil / Hilt / Chrome Custom Tabs / m
 
 ## ビルド・実行
 
-Android アプリスケルトンは Issue 駆動で作成する（`design/IDD-CLAUDE-ISSUES.md` の T0）。
-スケルトン完成後、本節にビルド手順（base URL 設定 / debug 実行 / テスト実行）を記載する。
+### 前提
+
+- JDK 17（Temurin 推奨。Gradle の Kotlin JVM toolchain で 17 に固定済み）
+- Android SDK（compileSdk / targetSdk = **35**、minSdk = **26**）
+- 環境変数 `ANDROID_HOME` を Android SDK のインストール先に設定するか、`local.properties` に
+  `sdk.dir=` を記載（`local.properties` はコミットしない / `.gitignore` 済み）
+
+### 基本ビルド
+
+リポジトリルートで以下を実行すれば、compile / Android Lint / JVM 単体テストがまとめて
+走り、exit code 0 で完了する:
+
+```bash
+./gradlew build
+```
+
+JVM 単体テストのみ実行する場合:
+
+```bash
+./gradlew test
+```
+
+### Gradle プロパティ（`feedman.baseUrl` / `feedman.mockMode`）
+
+スケルトンは以下の Gradle プロパティを `BuildConfig` フィールドに反映する。指定方法は
+**コマンドラインの `-P` フラグ**または `gradle.properties` への記述のいずれか:
+
+| Gradle プロパティ | BuildConfig フィールド | 未指定時の既定値 | 用途 |
+|---|---|---|---|
+| `feedman.baseUrl` | `BuildConfig.BASE_URL` | `https://dev.feedman.example.com` | 開発サーバー / 本番サーバーの切替（実 API 統合は後続 Issue） |
+| `feedman.mockMode` | `BuildConfig.MOCK_MODE` | `false` | `true` でログイン placeholder をスキップしてドロワー + モックタイムラインを起動 |
+
+例: モックモードでビルドする
+
+```bash
+./gradlew assembleDebug -Pfeedman.mockMode=true
+```
+
+例: baseUrl を上書きしてビルドする
+
+```bash
+./gradlew assembleDebug -Pfeedman.baseUrl=https://staging.example.com
+```
+
+複数プロパティを永続的に設定するには `gradle.properties` に追記する（リポジトリ直下に
+コメントアウト済みの例あり）:
+
+```properties
+feedman.mockMode=true
+feedman.baseUrl=https://dev.feedman.example.com
+```
+
+### 機密情報の取り扱い
+
+- 実トークン・本番 API キー・OAuth クライアントシークレットを **ソースコード / Version
+  Catalog / `gradle.properties` に埋め込まない**（`CLAUDE.md` 「機密情報の扱い」参照）
+- 本番接続情報は `local.properties` や CI secrets を経由して `-P` フラグで渡す運用とする
+- `local.properties` / `keystore.properties` / `google-services.json` は `.gitignore` 済み
 
 ## idd-claude 運用
 
