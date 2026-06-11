@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+*/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.cxx/
+
+# Local configuration
+local.properties
+keystore.properties
+*.keystore
+*.jks
+!debug.keystore
+
+# Push notification credentials (next phase)
+google-services.json
+
+# Kotlin
+.kotlin/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log

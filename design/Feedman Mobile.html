@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Feedman モバイル</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Geist', system-ui, sans-serif;
+    background: oklch(0.93 0.004 250);
+    color: oklch(0.205 0 0);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  @keyframes fmspin { to { transform: rotate(360deg); } }
+  button { font-family: inherit; }
+  .fm-prose p { margin: 0 0 14px; }
+  .fm-prose h3 { font-size: 1.02em; font-weight: 700; margin: 22px 0 10px; letter-spacing: -0.01em; }
+  .fm-prose ul { margin: 0 0 14px; padding-left: 1.25em; }
+  .fm-prose li { margin: 5px 0; }
+  .fm-prose a { color: var(--fm-accent); text-decoration: underline; text-underline-offset: 2px; }
+  .fm-prose b { color: var(--fm-fg); font-weight: 700; }
+  .fm-canvas { display: flex; gap: 28px; align-items: flex-start; justify-content: center; padding: 36px 28px 60px; flex-wrap: wrap; }
+  .notes { width: 380px; max-width: 92vw; }
+  .notes-card { background: #fff; border: 1px solid oklch(0.9 0.004 250); border-radius: 18px; padding: 22px 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .notes h2 { font-size: 18px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .notes h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: oklch(0.556 0 0); margin: 22px 0 10px; font-weight: 700; }
+  .notes p, .notes li { font-size: 13px; line-height: 1.65; color: oklch(0.35 0 0); }
+  .notes ul { margin: 0; padding-left: 18px; }
+  .notes li { margin: 6px 0; }
+  .notes code { font-family: 'Geist Mono', monospace; font-size: 11.5px; background: oklch(0.96 0.004 250); padding: 1px 5px; border-radius: 5px; color: oklch(0.3 0.02 260); }
+  .api-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 7px 0; border-top: 1px dashed oklch(0.9 0.004 250); }
+  .api-row span:first-child { font-size: 12px; font-weight: 700; color: oklch(0.25 0 0); }
+  .new-badge { display: inline-block; font-size: 10px; font-weight: 700; color: #fff; background: oklch(0.55 0.17 264); padding: 1px 7px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+  .pill { display:inline-block; font-size: 11px; font-weight:600; color: oklch(0.4 0 0); background: oklch(0.95 0.004 250); border:1px solid oklch(0.9 0.004 250); border-radius:999px; padding:4px 10px; margin: 0 6px 6px 0;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="android-frame.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="mobile/fm-data.jsx"></script>
+<script type="text/babel" src="mobile/fm-ui.jsx"></script>
+<script type="text/babel" src="mobile/fm-screens.jsx"></script>
+<script type="text/babel" src="mobile/fm-sheets.jsx"></script>
+
+<script type="text/babel">
+const { useState, useRef, useCallback } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "indigo",
+  "dark": false,
+  "timeline": "cards",
+  "card": "standard",
+  "detail": "full",
+  "nav": "drawer",
+  "pull": true
+}/*EDITMODE-END*/;
+
+const ACCENT_LIGHT = Object.fromEntries(Object.entries(FM_THEME.accents).map(([k, v]) => [k, v.light]));
+const COLOR_TO_KEY = Object.fromEntries(Object.entries(ACCENT_LIGHT).map(([k, c]) => [c, k]));
+
+function App() {
+  const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const T = FM_THEME(tw.dark, tw.accent);
+
+  const [authed, setAuthed] = useState(true);
+  const [nav, setNav] = useState({ view: 'timeline', feedId: null, filter: 'all', query: '' });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [items, setItems] = useState(FM_ITEMS);
+  const [detailId, setDetailId] = useState(null);
+  const [sheet, setSheet] = useState(null);
+  const [toast, setToast] = useState('');
+  const toastTimer = useRef(null);
+
+  const showToast = useCallback((msg) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 1900);
+  }, []);
+
+  const actions = {
+    drawerOpen,
+    openDrawer: () => setDrawerOpen(true),
+    closeDrawer: () => setDrawerOpen(false),
+    setView: (view, opts = {}) => {
+      setNav((n) => ({
+        ...n, view,
+        feedId: view === 'feed' ? (opts.feedId ?? n.feedId) : n.feedId,
+        filter: view === 'feed' ? (opts.filter ?? 'all') : n.filter,
+      }));
+      setDrawerOpen(false);
+    },
+    setFilter: (filter) => setNav((n) => ({ ...n, filter })),
+    openDetail: (item) => { setDetailId(item.id); setItems((p) => p.map((i) => i.id === item.id ? { ...i, is_read: true } : i)); },
+    closeDetail: () => setDetailId(null),
+    toggleStar: (item) => setItems((p) => p.map((i) => i.id === item.id ? { ...i, is_starred: !i.is_starred } : i)),
+    markRead: (item) => setItems((p) => p.map((i) => i.id === item.id ? { ...i, is_read: true } : i)),
+    openLink: (item) => {
+      setItems((p) => p.map((i) => i.id === item.id ? { ...i, is_read: true } : i));
+      showToast('外部ブラウザで開きました');
+    },
+    openSheet: (name, payload) => setSheet({ name, payload }),
+    closeSheet: () => setSheet(null),
+    refresh: () => new Promise((r) => setTimeout(() => { showToast('最新の状態に更新しました'); r(); }, 700)),
+    toggleTheme: () => setTweak('dark', !tw.dark),
+    toast: showToast,
+    logout: () => { setSheet(null); setAuthed(false); },
+    login: () => setAuthed(true),
+  };
+
+  const feeds = FM_FEEDS;
+  const data = { feeds, items, keywords: FM_KEYWORDS };
+  const ctx = { T, tweaks: tw, nav, actions, data, safe: { top: 0, bottom: 0 } };
+
+  const feed = feeds.find((f) => f.feed_id === nav.feedId);
+  let headerTitle = 'すべての新着', headerSub = null;
+  if (nav.view === 'feed' && feed) { headerTitle = feed.feed_title; headerSub = '未読 ' + feed.unread_count + ' 件'; }
+  else if (nav.view === 'starred') { headerTitle = 'お気に入り'; headerSub = 'スターした記事'; }
+  else if (nav.view === 'search') { headerTitle = '検索'; }
+  else if (nav.view === 'feeds') { headerTitle = 'フィード'; headerSub = feeds.length + ' 件の購読'; }
+  else { const tot = feeds.reduce((s, f) => s + f.unread_count, 0); headerSub = feeds.length + ' フィード · 未読 ' + tot; }
+
+  const detail = items.find((i) => i.id === detailId) || null;
+
+  function Screen() {
+    if (nav.view === 'timeline') return <FMTimelineScreen />;
+    if (nav.view === 'feed') return <FMFeedScreen />;
+    if (nav.view === 'starred') return <FMStarredScreen />;
+    if (nav.view === 'search') return <FMSearchScreen />;
+    if (nav.view === 'feeds') return (
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: T.bg }}>
+        <FMFeedListBody onPick={(fn) => fn()} />
+      </div>
+    );
+    return null;
+  }
+
+  return (
+    <FMCtx.Provider value={ctx}>
+      <div className="fm-canvas">
+        <AndroidDevice bg={T.bg} dark={T.statusDark} height={892}>
+          <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.bg, fontFamily: 'Geist, system-ui, sans-serif' }}>
+            {authed ? (
+              <React.Fragment>
+                {nav.view !== 'search' && <FMHeader title={headerTitle} sub={headerSub} />}
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: T.bg }}>
+                  <Screen />
+                </div>
+                <FMBottomTabs />
+                <FMDrawer />
+                {detail && <FMDetailSheet item={detail} onClose={actions.closeDetail} />}
+                {sheet && sheet.name === 'register' && <FMRegisterSheet onClose={actions.closeSheet} />}
+                {sheet && sheet.name === 'settings' && <FMSettingsSheet feed={sheet.payload} onClose={actions.closeSheet} />}
+                {sheet && sheet.name === 'keyword' && <FMKeywordSheet onClose={actions.closeSheet} />}
+                {sheet && sheet.name === 'account' && <FMAccountSheet onClose={actions.closeSheet} />}
+                <FMToast msg={toast} />
+              </React.Fragment>
+            ) : <FMLogin onLogin={actions.login} />}
+          </div>
+        </AndroidDevice>
+
+        <DesignNotes T={T} />
+      </div>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="テーマ" />
+        <TweakColor label="アクセント" value={ACCENT_LIGHT[tw.accent]}
+          options={Object.values(ACCENT_LIGHT)}
+          onChange={(c) => setTweak('accent', COLOR_TO_KEY[c] || 'indigo')} />
+        <TweakToggle label="ダークモード" value={tw.dark} onChange={(v) => setTweak('dark', v)} />
+
+        <TweakSection label="レイアウト" />
+        <TweakSelect label="新着タイムライン" value={tw.timeline}
+          options={[{ value: 'cards', label: 'カード' }, { value: 'list', label: 'リスト' }, { value: 'magazine', label: 'マガジン' }]}
+          onChange={(v) => setTweak('timeline', v)} />
+        <TweakSelect label="記事カード" value={tw.card}
+          options={[{ value: 'standard', label: '標準' }, { value: 'compact', label: 'コンパクト' }, { value: 'minimal', label: 'ミニマル' }]}
+          onChange={(v) => setTweak('card', v)} />
+        <TweakSelect label="記事詳細" value={tw.detail}
+          options={[{ value: 'partial', label: '部分シート' }, { value: 'full', label: '全画面シート' }, { value: 'reader', label: 'リーダー' }]}
+          onChange={(v) => setTweak('detail', v)} />
+        <TweakRadio label="ナビ構造" value={tw.nav}
+          options={[{ value: 'drawer', label: 'ドロワー' }, { value: 'bottomtabs', label: 'タブ' }]}
+          onChange={(v) => setTweak('nav', v)} />
+
+        <TweakSection label="挙動" />
+        <TweakToggle label="引っ張って更新" value={tw.pull} onChange={(v) => setTweak('pull', v)} />
+      </TweaksPanel>
+    </FMCtx.Provider>
+  );
+}
+
+function DesignNotes({ T }) {
+  return (
+    <div className="notes">
+      <div className="notes-card">
+        <h2>Feedman モバイル — 設計ノート</h2>
+        <p style={{ marginTop: 6 }}>既存 Web（Next.js 2ペイン / shadcn）を Android 向けに再構成。デザイントークン（oklch グレースケール・角丸10px・Geist）をそのまま移植し、アクセント1色だけ追加しています。</p>
+
+        <h3>方針</h3>
+        <ul>
+          <li>2ペイン → <b>左ドロワー + 記事ビュー</b>に再構成（タブ構成も Tweak で比較可）</li>
+          <li>記事は<b>外部ブラウザで開く</b>前提。一覧カードの外部リンクアイコン or 詳細から起動</li>
+          <li>Cookie セッション + 同一オリジン相対パス API を<b>ほぼそのまま流用</b></li>
+        </ul>
+
+        <h3>画面 → 流用する既存 API</h3>
+        <div className="api-row"><span>ログイン</span><span><code>/auth/google/login</code> <code>/auth/me</code></span></div>
+        <div className="api-row"><span>新着横断</span><span><code>GET /api/items/cross-feed</code>（cursor）</span></div>
+        <div className="api-row"><span>フィード別</span><span><code>GET /api/subscriptions</code> / <code>/api/feeds/&#123;id&#125;/items</code></span></div>
+        <div className="api-row"><span>記事詳細</span><span><code>GET /api/items/&#123;id&#125;</code> / <code>PUT …/state</code></span></div>
+        <div className="api-row"><span>スター</span><span><code>GET /api/feeds/starred/items</code></span></div>
+        <div className="api-row"><span>検索</span><span><code>GET /api/items/search?q=</code></span></div>
+        <div className="api-row"><span>登録/設定</span><span><code>POST /api/feeds</code> / <code>PATCH·DELETE /api/subscriptions/&#123;id&#125;</code></span></div>
+        <p style={{ marginTop: 10 }}>→ 読み取り・状態更新系はカーソルページネーション含め<b>そのまま流用可能</b>。</p>
+
+        <h3>新規 API 提案（要サーバー追加）</h3>
+        <ul>
+          <li><b>トークン認証</b><span className="new-badge">必須級</span><br />ネイティブは Cookie/OAuth リダイレクトが扱いにくい。OAuth 後に短命アクセス + リフレッシュトークンを発行（<code>/api/auth/token</code> / <code>/refresh</code>）。当面は WebView ログイン+Cookie でも可。</li>
+          <li><b>キーワードプッシュ通知</b><span className="new-badge">ご要望</span><br />端末登録 <code>POST /api/devices</code>、キーワード CRUD <code>/api/keywords</code>、worker に「新着フェッチ時にタイトル一致判定 → FCM 送信」ジョブを追加。</li>
+          <li><b>一括既読</b> <code>PUT /api/feeds/&#123;id&#125;/read-all</code><br />現状は1件ずつ。まとめ既読/スワイプ操作に必要。</li>
+          <li><b>起動同期</b> <code>GET /api/sync?since=</code>（任意）<br />購読・未読数・状態を一括取得し起動時のリクエスト数を削減。</li>
+        </ul>
+
+        <h3>Tweaks で試せること</h3>
+        <div>
+          <span className="pill">新着レイアウト 3案</span>
+          <span className="pill">記事カード 3案</span>
+          <span className="pill">記事詳細 3案</span>
+          <span className="pill">ドロワー / タブ</span>
+          <span className="pill">アクセント配色</span>
+          <span className="pill">ライト / ダーク</span>
+        </div>
+        <p style={{ marginTop: 12, fontSize: 12, color: 'oklch(0.6 0 0)' }}>右上の Tweaks トグルから切り替えできます。引っ張って更新・無限スクロールも動作します。</p>
+        <a style={{ display: 'inline-block', marginTop: 8, fontSize: 13, fontWeight: 700, color: 'oklch(0.55 0.17 264)', textDecoration: 'none' }} href="Feedman iPhone.html">iPhone 版を見る →</a>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
