@@ -28,7 +28,7 @@ import org.junit.Test
  * Issue #29 / Requirement 3 単体テスト（Session 関連）。
  * Issue #31 / Requirement 3, 4, 5 単体テスト（テーマ切替・シート起動状態）。
  *
- * - #29 Req 3.1: LoggedOut の状態を観測できる（[AppShell] が LoginPlaceholderScreen に
+ * - #29 Req 3.1: LoggedOut の状態を観測できる（[AppShell] が LoginScreen に
  *   差し替える前提）。
  * - #29 Req 3.2: LoggedIn の状態を観測できる（[AppShell] がドロワー付きシェルを描画する
  *   前提）。

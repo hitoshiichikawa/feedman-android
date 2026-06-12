@@ -53,7 +53,7 @@ import com.feedman.android.feature.subscriptionsettings.SubscriptionSettingsShee
 import com.feedman.android.feature.subscriptionsettings.SubscriptionSettingsViewModel
 import androidx.compose.ui.platform.LocalContext
 import com.feedman.android.core.ui.FeedmanSnackbar
-import com.feedman.android.feature.login.LoginPlaceholderScreen
+import com.feedman.android.feature.login.LoginScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -67,7 +67,7 @@ import javax.inject.Inject
  * アプリケーション全体のシェル（Issue #29 / Req 1〜4）。
  *
  * 観測した [SessionState] に応じて、画面全体を以下のいずれかに切り替える:
- * - [SessionState.LoggedOut] → [LoginPlaceholderScreen] に差し替え（Req 3.1, 3.4）
+ * - [SessionState.LoggedOut] → [LoginScreen] に差し替え（Req 3.1, 3.4 / #23 Req 1.1, 1.2）
  * - [SessionState.LoggedIn]  → [LoggedInShell]（ModalNavigationDrawer + Scaffold +
  *   TopAppBar + NavHost）を描画（Req 1.1〜1.4, 2.1〜2.6, 3.2, 3.3）
  *
@@ -79,7 +79,7 @@ fun AppShell() {
     val viewModel: AppShellViewModel = hiltViewModel()
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
     when (sessionState) {
-        SessionState.LoggedOut -> LoginPlaceholderScreen()
+        SessionState.LoggedOut -> LoginScreen(linkOpener = viewModel.linkOpener)
         SessionState.LoggedIn -> LoggedInShell()
     }
 }

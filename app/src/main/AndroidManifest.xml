@@ -12,13 +12,36 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Feedman">
 
+        <!--
+          Issue #23 Req 3.1 / NFR 2.1:
+          - launchMode="singleTask" を採用し、Custom Tabs から feedman://auth/callback?... で
+            戻ってきた際に同じ Activity インスタンスへ onNewIntent でディープリンクが届くようにする。
+            singleTop でも onNewIntent は呼ばれるが、Custom Tabs 起動時に新しいタスクで開かれた
+            場合に元の MainActivity に戻れるよう singleTask を採用する。
+          - INTERNET 権限のみ要求。ディープリンク受信に追加権限は不要。
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.Feedman">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              Issue #23 Req 3.1 / NFR 2.1: feedman://auth/callback の OAuth コールバック専用 intent-filter。
+              scheme / host / path をすべて固定して、他スキーム・他ホスト・他パスのインテントを
+              認証フローの入力として扱わないようにする（NFR 2.1）。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="feedman"
+                    android:host="auth"
+                    android:path="/callback" />
             </intent-filter>
         </activity>
     </application>
