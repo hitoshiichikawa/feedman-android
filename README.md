@@ -14,6 +14,7 @@
 | [design/SERVER.md](design/SERVER.md) | サーバー側追加実装（トークン認証 / キーワードプッシュ）の仕様 |
 | [docs/GRAND-DESIGN.md](docs/GRAND-DESIGN.md) | アーキテクチャ全体像（パッケージ構成 / レイヤー責務 / 状態同期 / テスト戦略） |
 | [design/IDD-CLAUDE-ISSUES.md](design/IDD-CLAUDE-ISSUES.md) | Issue バックログ・Epic/子Issue 対応表・投入手順 |
+| [docs/SMOKE-CHECKLIST.md](docs/SMOKE-CHECKLIST.md) | v1 リリース判定用の手動スモークチェックリスト（SPEC §10 を 1 項目ずつ追跡） |
 | [CLAUDE.md](CLAUDE.md) | idd-claude 全エージェント共通のプロジェクト憲章 |
 | `design/Feedman Mobile.html` / `design/mobile/*.jsx` | 視覚・挙動のリファレンス（モックデータ。API 形は SPEC §4 が正） |
 
@@ -83,12 +84,38 @@ feedman.mockMode=true
 feedman.baseUrl=https://stg-feed.markte-river.net
 ```
 
+### OAuth コールバック（`feedman://auth/callback`）の前提
+
+Bearer トークン認証フロー（`design/SERVER.md` §1）では、Google OAuth の認可後に
+`feedman://auth/callback?code=...&state=...` カスタムスキームでアプリに復帰します。
+このため、以下の前提が満たされている必要があります。
+
+- **アプリ側**: `AndroidManifest.xml` に `feedman://auth/callback` 用の intent-filter が登録済み
+  （Issue #23 で実装。本リポジトリのソースに含まれる）
+- **サーバー側**: Bearer トークン認証エンドポイント（`hitoshiichikawa/feedman` リポジトリの
+  追加実装）が OAuth クライアントの redirect URI 許可リストに `feedman://auth/callback` を
+  登録した状態でデプロイされていること
+- **実機ログインの可否**: 本 README 作成時点ではサーバー側エンドポイントが未デプロイのため、
+  実機 Google ログイン → 横断タイムライン到達までの end-to-end 検証は **サーバーデプロイ後に
+  実施** します。ローカル単体でアプリ動作を確認したい場合は、後述の `feedman.mockMode=true` で
+  ログイン placeholder をスキップしてください
+
 ### 機密情報の取り扱い
 
 - 実トークン・本番 API キー・OAuth クライアントシークレットを **ソースコード / Version
   Catalog / `gradle.properties` に埋め込まない**（`CLAUDE.md` 「機密情報の扱い」参照）
 - 本番接続情報は `local.properties` や CI secrets を経由して `-P` フラグで渡す運用とする
 - `local.properties` / `keystore.properties` / `google-services.json` は `.gitignore` 済み
+
+## v1 スモークチェック
+
+v1 リリース判定時の手動確認手順は [`docs/SMOKE-CHECKLIST.md`](docs/SMOKE-CHECKLIST.md) に
+まとめてあります。`design/SPEC.md` §10 の各受け入れ基準（Google ログイン → 横断タイムライン /
+`since_time` 固定の無限スクロール / フィード別フィルタ / 詳細シート + 既読化 / Custom Tabs /
+スター整合 / Pull-to-refresh + `FEED_COOLDOWN` 案内 / フィード登録・購読・間隔変更 / 検索 /
+テーマ切替 / ログアウト / 退会）について、自動テストで担保される範囲と手動確認の手順を 1
+項目ずつ列挙しています。実機 Google ログイン以降の項目は、Bearer トークン認証サーバーの
+デプロイ後に実施する旨を明示しています。
 
 ## CI（GitHub Actions）
 
