@@ -3,15 +3,19 @@ package com.feedman.android.feature.timeline
 import androidx.paging.PagingData
 import androidx.paging.testing.asSnapshot
 import com.feedman.android.core.data.CrossFeedRepository
+import com.feedman.android.core.data.ItemDetailRepository
 import com.feedman.android.core.data.ItemRepository
 import com.feedman.android.core.model.AppConfig
 import com.feedman.android.core.model.CrossFeedItem
+import com.feedman.android.core.model.ItemDetail
 import com.feedman.android.core.model.MockTimelineItem
+import com.feedman.android.core.network.FeedmanException
 import com.feedman.android.core.ui.ArticleCardModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -57,6 +61,7 @@ class TimelineViewModelTest {
             crossFeedRepository = FakeCrossFeedRepository(flowOf(PagingData.from(items))),
             itemRepository = NoopItemRepository(),
             appConfig = AppConfig(baseUrl = "https://example.invalid", mockMode = false),
+            itemDetailRepository = NoopItemDetailRepository(),
         )
 
         // Act
@@ -80,6 +85,7 @@ class TimelineViewModelTest {
             crossFeedRepository = FailingCrossFeedRepository(), // mockMode では呼ばれない
             itemRepository = StubItemRepository(flowOf(mockItems)),
             appConfig = AppConfig(baseUrl = "https://example.invalid", mockMode = true),
+            itemDetailRepository = NoopItemDetailRepository(),
         )
 
         // Act
@@ -99,6 +105,7 @@ class TimelineViewModelTest {
             crossFeedRepository = FakeCrossFeedRepository(flowOf(PagingData.empty())),
             itemRepository = NoopItemRepository(),
             appConfig = AppConfig(baseUrl = "https://example.invalid", mockMode = false),
+            itemDetailRepository = NoopItemDetailRepository(),
         )
 
         // Act
@@ -116,6 +123,7 @@ class TimelineViewModelTest {
             crossFeedRepository = FakeCrossFeedRepository(flowOf(PagingData.from(listOf(readItem)))),
             itemRepository = NoopItemRepository(),
             appConfig = AppConfig(baseUrl = "https://example.invalid", mockMode = false),
+            itemDetailRepository = NoopItemDetailRepository(),
         )
 
         // Act
@@ -162,5 +170,118 @@ class TimelineViewModelTest {
 
     private class NoopItemRepository : ItemRepository {
         override fun observeTimeline(): Flow<List<MockTimelineItem>> = flowOf(emptyList())
+    }
+
+    /** Issue #37: 既読化呼び出しを記録する fake。エラーは `errorToThrow` で差し替え可能。 */
+    private class RecordingItemDetailRepository(
+        var errorToThrow: FeedmanException? = null,
+    ) : ItemDetailRepository {
+        val updateStateCalls: MutableList<UpdateCall> = mutableListOf()
+
+        override suspend fun getItem(itemId: String): ItemDetail {
+            error("getItem must not be called in this test")
+        }
+
+        override suspend fun updateState(
+            itemId: String,
+            isRead: Boolean?,
+            isStarred: Boolean?,
+        ) {
+            updateStateCalls += UpdateCall(itemId, isRead, isStarred)
+            errorToThrow?.let { throw it }
+        }
+    }
+
+    private class NoopItemDetailRepository : ItemDetailRepository {
+        override suspend fun getItem(itemId: String): ItemDetail =
+            error("getItem must not be called in this test")
+
+        override suspend fun updateState(
+            itemId: String,
+            isRead: Boolean?,
+            isStarred: Boolean?,
+        ) {
+            // no-op
+        }
+    }
+
+    private data class UpdateCall(
+        val itemId: String,
+        val isRead: Boolean?,
+        val isStarred: Boolean?,
+    )
+
+    // ── Issue #37 — markReadOnExternalOpen / notifyExternalLinkFailed ──────
+
+    @Test
+    fun `markReadOnExternalOpen で updateState_isRead_true_を呼ぶ_Req 2_2`() = runTest {
+        // Arrange
+        val itemDetailRepo = RecordingItemDetailRepository()
+        val viewModel = TimelineViewModel(
+            crossFeedRepository = FakeCrossFeedRepository(flowOf(PagingData.empty())),
+            itemRepository = NoopItemRepository(),
+            appConfig = AppConfig(baseUrl = "https://example.invalid", mockMode = false),
+            itemDetailRepository = itemDetailRepo,
+        )
+
+        // Act
+        viewModel.markReadOnExternalOpen(itemId = "item-1")
+
+        // Assert
+        assertEquals(1, itemDetailRepo.updateStateCalls.size)
+        assertEquals("item-1", itemDetailRepo.updateStateCalls[0].itemId)
+        assertEquals(true, itemDetailRepo.updateStateCalls[0].isRead)
+        assertEquals(null, itemDetailRepo.updateStateCalls[0].isStarred)
+    }
+
+    @Test
+    fun `markReadOnExternalOpen で updateState が失敗すると MarkReadFailed を流す_Req 2_4`() = runTest {
+        // Arrange
+        val error = FeedmanException(
+            code = FeedmanException.CODE_NETWORK_ERROR,
+            errorMessage = "オフライン",
+        )
+        val itemDetailRepo = RecordingItemDetailRepository(errorToThrow = error)
+        val viewModel = TimelineViewModel(
+            crossFeedRepository = FakeCrossFeedRepository(flowOf(PagingData.empty())),
+            itemRepository = NoopItemRepository(),
+            appConfig = AppConfig(baseUrl = "https://example.invalid", mockMode = false),
+            itemDetailRepository = itemDetailRepo,
+        )
+        val received = mutableListOf<TimelineExternalLinkEvent>()
+        val job = kotlinx.coroutines.CoroutineScope(Dispatchers.Unconfined).launch {
+            viewModel.externalLinkEvents.collect { received += it }
+        }
+
+        // Act
+        viewModel.markReadOnExternalOpen(itemId = "x")
+
+        // Assert
+        assertEquals(1, received.size)
+        assertEquals(TimelineExternalLinkEvent.MarkReadFailed, received[0])
+        job.cancel()
+    }
+
+    @Test
+    fun `notifyExternalLinkFailed で OpenLinkFailed が流れる_Req 3_3_4_1_4_2`() = runTest {
+        // Arrange
+        val viewModel = TimelineViewModel(
+            crossFeedRepository = FakeCrossFeedRepository(flowOf(PagingData.empty())),
+            itemRepository = NoopItemRepository(),
+            appConfig = AppConfig(baseUrl = "https://example.invalid", mockMode = false),
+            itemDetailRepository = NoopItemDetailRepository(),
+        )
+        val received = mutableListOf<TimelineExternalLinkEvent>()
+        val job = kotlinx.coroutines.CoroutineScope(Dispatchers.Unconfined).launch {
+            viewModel.externalLinkEvents.collect { received += it }
+        }
+
+        // Act
+        viewModel.notifyExternalLinkFailed()
+
+        // Assert
+        assertEquals(1, received.size)
+        assertEquals(TimelineExternalLinkEvent.OpenLinkFailed, received[0])
+        job.cancel()
     }
 }
