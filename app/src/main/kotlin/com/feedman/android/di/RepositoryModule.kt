@@ -2,6 +2,8 @@ package com.feedman.android.di
 
 import com.feedman.android.core.data.CrossFeedRepository
 import com.feedman.android.core.data.CrossFeedRepositoryImpl
+import com.feedman.android.core.data.FeedItemsRepository
+import com.feedman.android.core.data.FeedItemsRepositoryImpl
 import com.feedman.android.core.data.ItemDetailRepository
 import com.feedman.android.core.data.ItemDetailRepositoryImpl
 import com.feedman.android.core.data.ItemRepository
@@ -42,6 +44,17 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindCrossFeedRepository(impl: CrossFeedRepositoryImpl): CrossFeedRepository
+
+    /**
+     * フィード別記事一覧の実 API 用リポジトリ（Issue #40 Req 1〜4 / NFR 1 / 2）。
+     *
+     * `GET /api/feeds/{id}/items?filter=all|unread|starred` を呼ぶ Pager データ層として独立に
+     * 注入される。フィード別画面 UI（#41）はこの interface のみに依存し、フィルタごとの
+     * `Flow<PagingData<ItemSummary>>` を購読する。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindFeedItemsRepository(impl: FeedItemsRepositoryImpl): FeedItemsRepository
 
     /**
      * 記事詳細・状態更新リポジトリ（Issue #35 Req 1 / 2 / 3）。
