@@ -459,6 +459,11 @@ internal class StubUserRepository(
         exception?.let { throw it }
         return result ?: error("StubUserRepository: no result configured")
     }
+
+    /** Issue #51: 本テストは getCurrentUser の検証用途のため、deleteMe は未使用（呼ばれない）。 */
+    override suspend fun deleteMe() {
+        error("StubUserRepository.deleteMe is not used in AccountSheetViewModelTest")
+    }
 }
 
 /**
