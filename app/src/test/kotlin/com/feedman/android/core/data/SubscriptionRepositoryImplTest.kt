@@ -465,6 +465,164 @@ class SubscriptionRepositoryImplTest {
         assertEquals(before.unreadCount, after.unreadCount)
     }
 
+    // ===== Issue #43: 購読設定更新（updateSettings） =====
+
+    @Test
+    fun `Issue43 Req 2_4 updateSettings で api subscriptions id settings を PUT する fetch_interval_minutes ボディ`() = runTest {
+        // Arrange: refresh 用 + updateSettings 用の 2 レスポンス
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        // settings 更新後は新しい fetchIntervalMinutes を持つ Subscription を返す（180）
+        val updatedJson = active.replace("\"fetch_interval_minutes\": 60", "\"fetch_interval_minutes\": 180")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(updatedJson))
+        val repo = newRepository()
+        repo.refresh()
+        server.takeRequest() // refresh 分を捨てる
+        val before = repo.observeSubscriptions().first().single()
+        assertEquals(60, before.fetchIntervalMinutes)
+
+        // Act
+        val returned = repo.updateSettings(before.id, 180)
+
+        // Assert: PUT メソッド + パス
+        val recorded = server.takeRequest()
+        assertEquals("PUT", recorded.method)
+        assertEquals(
+            "/api/subscriptions/${before.id}/settings",
+            recorded.requestUrl?.encodedPath,
+        )
+        // Assert: ボディに fetch_interval_minutes が含まれる
+        val body = recorded.body.readUtf8()
+        assertTrue("body should contain fetch_interval_minutes: $body", body.contains("\"fetch_interval_minutes\""))
+        assertTrue("body should contain 180: $body", body.contains("180"))
+        // 戻り値 + 観測ストリーム双方が新しい値を持つ
+        assertEquals(180, returned.fetchIntervalMinutes)
+        val afterList = repo.observeSubscriptions().first()
+        assertEquals(180, afterList[0].fetchIntervalMinutes)
+    }
+
+    @Test
+    fun `Issue43 Req 5_1 updateSettings 失敗時は例外を伝搬し購読リストを変えない`() = runTest {
+        // Arrange
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first().single()
+
+        // updateSettings が 500 で失敗
+        val errorBody = """
+            {
+              "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "設定の更新に失敗しました。"
+              }
+            }
+        """.trimIndent()
+        server.enqueue(
+            MockResponse().setResponseCode(500)
+                .setHeader("Content-Type", "application/json")
+                .setBody(errorBody),
+        )
+
+        // Act / Assert
+        var thrown: Throwable? = null
+        try {
+            repo.updateSettings(before.id, 180)
+        } catch (e: Throwable) {
+            thrown = e
+        }
+        assertTrue("expected FeedmanException, got $thrown", thrown is FeedmanException)
+        // 購読リストは変わらない（fetchIntervalMinutes は元のまま）
+        val after = repo.observeSubscriptions().first().single()
+        assertEquals(before.fetchIntervalMinutes, after.fetchIntervalMinutes)
+    }
+
+    // ===== Issue #43: 購読解除（unsubscribe） =====
+
+    @Test
+    fun `Issue43 Req 4_3 unsubscribe で api subscriptions id を DELETE する`() = runTest {
+        // Arrange: refresh 用 + unsubscribe 用
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        // DELETE は 204 No Content
+        server.enqueue(MockResponse().setResponseCode(204))
+        val repo = newRepository()
+        repo.refresh()
+        server.takeRequest() // refresh 分を捨てる
+        val before = repo.observeSubscriptions().first().single()
+
+        // Act
+        repo.unsubscribe(before.id)
+
+        // Assert: DELETE メソッド + パス
+        val recorded = server.takeRequest()
+        assertEquals("DELETE", recorded.method)
+        assertEquals(
+            "/api/subscriptions/${before.id}",
+            recorded.requestUrl?.encodedPath,
+        )
+    }
+
+    @Test
+    fun `Issue43 Req 4_4 unsubscribe 成功で観測中のリストから当該フィードが除去される`() = runTest {
+        // Arrange: 2 件ロードして 1 件を解除
+        val active = FixtureLoader.load("subscription_active.json")
+        val errorJson = FixtureLoader.load("subscription_error.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active,$errorJson]"))
+        server.enqueue(MockResponse().setResponseCode(204))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first()
+        assertEquals(2, before.size)
+        val targetId = before[0].id
+
+        // Act
+        repo.unsubscribe(targetId)
+
+        // Assert: 該当 entry がリストから消える
+        val after = repo.observeSubscriptions().first()
+        assertEquals(1, after.size)
+        assertEquals(before[1].id, after[0].id)
+    }
+
+    @Test
+    fun `Issue43 Req 4_7 unsubscribe 失敗時は例外を伝搬しリストを変えない`() = runTest {
+        // Arrange
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first().single()
+
+        val errorBody = """
+            {
+              "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "解除に失敗しました。"
+              }
+            }
+        """.trimIndent()
+        server.enqueue(
+            MockResponse().setResponseCode(500)
+                .setHeader("Content-Type", "application/json")
+                .setBody(errorBody),
+        )
+
+        // Act / Assert
+        var thrown: Throwable? = null
+        try {
+            repo.unsubscribe(before.id)
+        } catch (e: Throwable) {
+            thrown = e
+        }
+        assertTrue("expected FeedmanException, got $thrown", thrown is FeedmanException)
+        // 購読リストは変わらない（1 件残る）
+        val after = repo.observeSubscriptions().first()
+        assertEquals(1, after.size)
+        assertEquals(before.id, after[0].id)
+    }
+
     @Test
     fun `Issue42 Req 4_1 fetch その他のエラー時に例外を伝搬し購読リストを変えない`() = runTest {
         // Arrange

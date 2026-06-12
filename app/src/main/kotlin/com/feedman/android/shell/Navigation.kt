@@ -37,6 +37,7 @@ fun Navigation(
     navController: NavHostController,
     onOpenItemDetail: (itemId: String) -> Unit = {},
     onOpenExternalLink: (url: String) -> OpenLinkResult = { OpenLinkResult.NoAppToHandle },
+    onOpenSubscriptionSettings: (feedId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -65,6 +66,7 @@ fun Navigation(
             FeedScreen(
                 onOpenItemDetail = { itemId -> onOpenItemDetail(itemId) },
                 onOpenExternalLink = onOpenExternalLink,
+                onOpenSettings = onOpenSubscriptionSettings,
             )
         }
         composable(AppRoute.Starred.id) {

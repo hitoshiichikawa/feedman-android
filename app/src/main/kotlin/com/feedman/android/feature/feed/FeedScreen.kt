@@ -16,10 +16,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -85,6 +87,7 @@ fun FeedScreen(
     modifier: Modifier = Modifier,
     onOpenItemDetail: (itemId: String) -> Unit = {},
     onOpenExternalLink: (url: String) -> OpenLinkResult = { OpenLinkResult.NoAppToHandle },
+    onOpenSettings: (feedId: String) -> Unit = {},
     viewModel: FeedScreenViewModel = hiltViewModel(),
 ) {
     val pagingItems = viewModel.cardPagingData.collectAsLazyPagingItems()
@@ -172,11 +175,35 @@ fun FeedScreen(
                     onResumeTap = { viewModel.onResumeBannerTap() },
                 )
             }
-            // 2. フィルタタブ
-            FeedFilterTabsRow(
-                current = currentFilter,
-                onSelect = { viewModel.selectFilter(it) },
-            )
+            // 2. フィルタタブ + 設定導線（Issue #43 Req 1.2）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    FeedFilterTabsRow(
+                        current = currentFilter,
+                        onSelect = { viewModel.selectFilter(it) },
+                    )
+                }
+                // Issue #43 Req 1.2: 設定アイコン → 購読設定シート起動。
+                // subscription が未ロード時はタップ可能だが、ViewModel 側 open(feedId) で
+                // observeFeed が non-null を流したタイミングでシート Visible に遷移する。
+                IconButton(
+                    onClick = { onOpenSettings(viewModel.feedId) },
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(44.dp), // NFR 2.1 タップ標的
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = stringResource(
+                            id = R.string.feed_action_open_settings,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             // 3. 記事一覧 / 状態表示（Pull-to-refresh でラップ）
             PullToRefreshBox(
                 isRefreshing = fetchInProgress,
