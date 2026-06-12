@@ -1,8 +1,11 @@
 package com.feedman.android.shell
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -10,6 +13,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -64,23 +69,59 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * アプリケーション全体のシェル（Issue #29 / Req 1〜4）。
+ * アプリケーション全体のシェル（Issue #29 / Issue #24 / Req 1〜4）。
  *
  * 観測した [SessionState] に応じて、画面全体を以下のいずれかに切り替える:
- * - [SessionState.LoggedOut] → [LoginScreen] に差し替え（Req 3.1, 3.4 / #23 Req 1.1, 1.2）
+ * - [SessionState.Restoring] → [RestoringSplash]（スプラッシュ相当のローディング表示）を
+ *   描画（Issue #24 Req 2.1〜2.3）。ログイン画面 / 認証済みシェルは描画しない。
+ * - [SessionState.LoggedOut] → [LoginScreen] に差し替え（Issue #24 Req 4.1 / 4.2）
  * - [SessionState.LoggedIn]  → [LoggedInShell]（ModalNavigationDrawer + Scaffold +
- *   TopAppBar + NavHost）を描画（Req 1.1〜1.4, 2.1〜2.6, 3.2, 3.3）
+ *   TopAppBar + NavHost）を描画（Issue #24 Req 3.1 / 3.2）
  *
- * 状態は [SessionStateProvider] から `StateFlow` で観測するため、Issue #24 で本実装に
- * 差し替えても本 Composable の構造は変わらない（Req 3.5 / NFR 2.2）。
+ * 状態は [SessionStateProvider] から `StateFlow` で観測する。Issue #24 で起動時 refresh
+ * 経路が入り、保存済みトークンから LoggedIn を即時復元できるようになるが、本 Composable
+ * の構造は変わらない（Req 5.2 / NFR 2.2）。
  */
 @Composable
 fun AppShell() {
     val viewModel: AppShellViewModel = hiltViewModel()
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
     when (sessionState) {
+        SessionState.Restoring -> RestoringSplash()
         SessionState.LoggedOut -> LoginScreen(linkOpener = viewModel.linkOpener)
         SessionState.LoggedIn -> LoggedInShell()
+    }
+}
+
+/**
+ * 起動時の認証復元中に表示するスプラッシュ相当のローディング画面
+ * （Issue #24 Req 2.1〜2.3）。
+ *
+ * 画面いっぱいの背景色（[MaterialTheme.colorScheme.background]）の上に中央寄せで
+ * [CircularProgressIndicator] と「読み込み中」を意味するテキストを描画する。本画面は
+ * - ログイン画面を描画しない（Req 2.2）
+ * - 認証済みシェル（ドロワー付きシェル）を描画しない（Req 2.3）
+ *
+ * を満たすため、`LoginScreen` / `LoggedInShell` のいずれの要素も含めない。
+ */
+@Composable
+private fun RestoringSplash() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator()
+            Text(
+                text = stringResource(R.string.session_restoring_description),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 
