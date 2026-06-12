@@ -211,6 +211,14 @@
     <!-- Issue #45 Req 3.1 / 3.2: 登録は成功したが直後の購読一覧再取得が失敗した場合の snackbar 文言 -->
     <string name="register_feed_subscription_refresh_failed">フィード一覧の更新に失敗しました。ドロワーを開き直すと再試行できます</string>
 
+    <!-- Issue #46: スター一覧画面（StarredScreen）固有文言 -->
+    <!-- Req 3.1: 0 件読み込み完了時の空状態タイトル -->
+    <string name="starred_empty_title">スター付きの記事はありません</string>
+    <!-- Req 3.1: 空状態補助テキスト（誘導文） -->
+    <string name="starred_empty_subtitle">気になる記事にスターを付けると、ここから一覧できます</string>
+    <!-- Req 3.4: リフレッシュ失敗時の snackbar 文言 -->
+    <string name="starred_refresh_error">最新のスター一覧を取得できませんでした</string>
+
     <!-- Issue #42: 手動フェッチ（Pull-to-refresh）固有文言 -->
     <!-- Req 3.1 / 3.2: クールダウン応答時の snackbar 文言（残り秒数あり）-->
     <string name="feed_fetch_cooldown_with_seconds">あと %1$d 秒で再試行可能です</string>
