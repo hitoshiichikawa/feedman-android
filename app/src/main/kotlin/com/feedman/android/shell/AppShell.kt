@@ -41,6 +41,8 @@ import com.feedman.android.core.auth.SessionStateProvider
 import com.feedman.android.core.designsystem.ThemeMode
 import com.feedman.android.core.designsystem.ThemeModeRepository
 import com.feedman.android.core.ui.FeedmanSheet
+import com.feedman.android.feature.articledetail.ArticleDetailSheet
+import com.feedman.android.feature.articledetail.ArticleDetailViewModel
 import com.feedman.android.feature.login.LoginPlaceholderScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -209,9 +211,21 @@ private fun LoggedInShell() {
                 )
             },
         ) { padding ->
+            // Issue #36 Req 1.1: 一覧から記事タップで詳細シートを起動する。
+            // ArticleDetailViewModel は LoggedInShell のスコープで 1 つだけ保持し、
+            // 全ルートから同じインスタンスへ open(id) を依頼する（シェル単位の起動点）。
+            val articleDetailViewModel: ArticleDetailViewModel = hiltViewModel()
             Navigation(
                 navController = navController,
+                onOpenItemDetail = { itemId -> articleDetailViewModel.open(itemId) },
                 modifier = Modifier.padding(padding),
+            )
+            // Issue #36 Req 1.1, 1.4, 1.5: 詳細シートを LoggedInShell 直下に配置することで、
+            // ルート遷移をまたいでも同じ ViewModel を使えるようにする。Issue #37 で外部リンク
+            // 起動の実体（Custom Tabs）を結線するまでは onOpenExternal は no-op で受ける。
+            ArticleDetailSheet(
+                onOpenExternal = { /* TODO(#37): Custom Tabs 起動 */ },
+                viewModel = articleDetailViewModel,
             )
         }
     }

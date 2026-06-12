@@ -33,6 +33,7 @@ import com.feedman.android.feature.timeline.TimelineScreen
 @Composable
 fun Navigation(
     navController: NavHostController,
+    onOpenItemDetail: (itemId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -41,11 +42,12 @@ fun Navigation(
         modifier = modifier,
     ) {
         composable(AppRoute.Timeline.id) {
-            // Issue #33: タイムラインカードからのコールバックを暫定 no-op で結線する。
-            // - onOpenItemDetail: Issue #36 で記事詳細ボトムシート起動に差し替え
+            // Issue #33: タイムラインカードからのコールバックを結線する。
+            // - onOpenItemDetail: Issue #36 でシェル直下の ArticleDetailSheet を起動
+            //   （open(itemId) を渡す）
             // - onOpenExternalLink: Issue #37 で Custom Tabs 起動 + 既読化に差し替え
             TimelineScreen(
-                onOpenItemDetail = { /* TODO(#36) */ },
+                onOpenItemDetail = { itemId -> onOpenItemDetail(itemId) },
                 onOpenExternalLink = { /* TODO(#37) */ },
             )
         }
