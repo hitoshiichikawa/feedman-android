@@ -127,6 +127,129 @@ class DrawerViewModelTest {
         createdAt = "2025-05-01T00:00:00Z",
     )
 
+    // ===== Issue #39 追加: 取得状態 / 再試行 =================================
+
+    @Test
+    fun `Req 2_1 2_2 取得失敗時に feedSection が Error message を保持する`() = runTest {
+        // Arrange
+        val viewModel = DrawerViewModel(
+            repository = object : SubscriptionRepository {
+                override fun observeSubscriptions(): Flow<List<Subscription>> =
+                    flowOf(emptyList())
+                override fun observeLoadState(): Flow<SubscriptionLoadState> = flowOf(
+                    SubscriptionLoadState.Error(
+                        message = "サーバーが応答しません",
+                        code = "UNKNOWN_ERROR",
+                    ),
+                )
+                override suspend fun refresh() = Unit
+            },
+        )
+
+        // Act + Assert
+        viewModel.uiState.test {
+            var state = awaitItem()
+            // Idle 初期値 → Error 反映の遷移を許容する
+            while (state.feedSection !is FeedSectionState.Error) {
+                state = awaitItem()
+            }
+            val error = state.feedSection as FeedSectionState.Error
+            assertEquals("サーバーが応答しません", error.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `Req 2_5 取得中 rows 空 のとき feedSection が Loading になる`() = runTest {
+        // Arrange
+        val viewModel = DrawerViewModel(
+            repository = object : SubscriptionRepository {
+                override fun observeSubscriptions(): Flow<List<Subscription>> =
+                    flowOf(emptyList())
+                override fun observeLoadState(): Flow<SubscriptionLoadState> =
+                    flowOf(SubscriptionLoadState.Loading)
+                override suspend fun refresh() = Unit
+            },
+        )
+
+        // Act + Assert
+        viewModel.uiState.test {
+            var state = awaitItem()
+            while (state.feedSection !is FeedSectionState.Loading) {
+                state = awaitItem()
+            }
+            assertEquals(FeedSectionState.Loading, state.feedSection)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `Req 2_5 取得中でも rows が残っているなら feedSection は Success silent refresh`() = runTest {
+        // Arrange: rows = 1 件 + load = Loading の状態を想定
+        val viewModel = DrawerViewModel(
+            repository = object : SubscriptionRepository {
+                override fun observeSubscriptions(): Flow<List<Subscription>> = flowOf(
+                    listOf(fakeSubscription("a", "A", 0, "active")),
+                )
+                override fun observeLoadState(): Flow<SubscriptionLoadState> =
+                    flowOf(SubscriptionLoadState.Loading)
+                override suspend fun refresh() = Unit
+            },
+        )
+
+        // Act + Assert
+        viewModel.uiState.test {
+            var state = awaitItem()
+            while (state.rows.isEmpty()) state = awaitItem()
+            // silent refresh: 既存リストはそのまま、feedSection は Success
+            assertEquals(FeedSectionState.Success, state.feedSection)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `Req 1_1 ViewModel 初期化時にリポジトリの refresh が起動される`() = runTest {
+        // Arrange
+        val recordingRepo = RecordingSubscriptionRepository()
+
+        // Act
+        DrawerViewModel(repository = recordingRepo)
+
+        // Assert
+        assertEquals(1, recordingRepo.refreshCount)
+    }
+
+    @Test
+    fun `Req 2_4 retryLoadSubscriptions が repository の refresh を再呼び出しする`() = runTest {
+        // Arrange
+        val recordingRepo = RecordingSubscriptionRepository()
+        val viewModel = DrawerViewModel(repository = recordingRepo)
+        // 初期化時に 1 回呼ばれている
+        assertEquals(1, recordingRepo.refreshCount)
+
+        // Act
+        viewModel.retryLoadSubscriptions()
+
+        // Assert
+        assertEquals(2, recordingRepo.refreshCount)
+    }
+
+    private class RecordingSubscriptionRepository : SubscriptionRepository {
+        private val state = MutableStateFlow<SubscriptionLoadState>(SubscriptionLoadState.Idle)
+        var refreshCount: Int = 0
+            private set
+
+        override fun observeSubscriptions(): Flow<List<Subscription>> =
+            MutableStateFlow<List<Subscription>>(emptyList()).asStateFlow()
+
+        override fun observeLoadState(): Flow<SubscriptionLoadState> = state.asStateFlow()
+
+        override suspend fun refresh() {
+            refreshCount++
+            state.value = SubscriptionLoadState.Success
+        }
+    }
+
     private class StubSubscriptionRepository(
         private val source: Flow<List<Subscription>>,
     ) : SubscriptionRepository {
