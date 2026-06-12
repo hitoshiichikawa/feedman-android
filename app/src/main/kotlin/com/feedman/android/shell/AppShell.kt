@@ -94,6 +94,16 @@ private fun LoggedInShell() {
                     // ドロワーだけは閉じて UX を破綻させない。
                     coroutineScope.launch { drawerState.close() }
                 },
+                // #30 Req 3.1, 3.2, 3.3: フィード行タップで feed/{feedId} へ遷移 + ドロワー閉。
+                onSelectFeed = { row ->
+                    navController.navigate(AppRoute.Feed.path(row.feedId)) {
+                        launchSingleTop = true
+                    }
+                    coroutineScope.launch { drawerState.close() }
+                },
+                // #30 Req 4.1, 4.2, 4.3: 設定アイコンは #43 のシート起動入口として配線のみ。
+                // 本 Issue ではコールバックだけを受けて no-op（ドロワーは開いたまま / Req 4.3）。
+                onSelectFeedSettings = { /* #43 で設定シートを起動する。配線済み no-op。 */ },
             )
         },
     ) {

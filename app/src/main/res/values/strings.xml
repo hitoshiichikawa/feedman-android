@@ -16,6 +16,18 @@
     <string name="drawer_section_feeds">フィード</string>
     <!-- 静的 placeholder 文言（#30 で動的フィード一覧に置換予定） -->
     <string name="drawer_feeds_placeholder_pending">フィード一覧は別 Issue で実装します</string>
+
+    <!-- Issue #30: ドロワーフィード一覧 -->
+    <!-- Req 1.2: フィード行 favicon の a11y 説明（タイトルは動的 format パラメータ） -->
+    <string name="drawer_feed_favicon_description">%1$s の favicon</string>
+    <!-- Req 2.1: 停止アイコンの a11y 説明 -->
+    <string name="drawer_feed_status_stopped">停止中</string>
+    <!-- Req 2.2: 警告アイコンの a11y 説明 -->
+    <string name="drawer_feed_status_error">エラー</string>
+    <!-- Req 4.1: 設定アイコンの a11y 説明（タイトルは動的 format パラメータ） -->
+    <string name="drawer_feed_settings_description">%1$s の設定を開く</string>
+    <!-- Req 1.1.1: 未読バッジの a11y 説明（件数を読み上げる） -->
+    <string name="drawer_feed_unread_badge_description">未読 %1$d 件</string>
     <!-- Req 4.1: フッタ「アカウント」（ボトムシート起動入口。配線は後続 Issue） -->
     <string name="drawer_footer_account">アカウント</string>
     <!-- Req 4.1: フッタ「テーマ切替」（配線は後続 Issue） -->
