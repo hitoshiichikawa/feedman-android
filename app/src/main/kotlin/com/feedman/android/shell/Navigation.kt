@@ -41,7 +41,13 @@ fun Navigation(
         modifier = modifier,
     ) {
         composable(AppRoute.Timeline.id) {
-            TimelineScreen()
+            // Issue #33: タイムラインカードからのコールバックを暫定 no-op で結線する。
+            // - onOpenItemDetail: Issue #36 で記事詳細ボトムシート起動に差し替え
+            // - onOpenExternalLink: Issue #37 で Custom Tabs 起動 + 既読化に差し替え
+            TimelineScreen(
+                onOpenItemDetail = { /* TODO(#36) */ },
+                onOpenExternalLink = { /* TODO(#37) */ },
+            )
         }
         composable(
             route = AppRoute.Feed.id,
