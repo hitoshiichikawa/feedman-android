@@ -1,0 +1,12 @@
+{
+  "id": "01HGY8K9ZQ4N7TXVY1F8M9R3D2",
+  "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FE",
+  "title": "はてブ未取得な記事",
+  "link": "https://example.com/blog/no-hatebu",
+  "summary": "hatebu_fetched_at が欠落しているケース",
+  "published_at": "2026-06-08T15:00:00Z",
+  "is_date_estimated": true,
+  "is_read": true,
+  "is_starred": true,
+  "hatebu_count": 0
+}

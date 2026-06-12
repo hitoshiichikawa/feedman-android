@@ -1,0 +1,14 @@
+{
+  "id": "01HGY8K9ZQ4N7TXVY1F8M9R3D5",
+  "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FF",
+  "title": "検索ヒット記事",
+  "link": "https://example.com/search/hit-1",
+  "summary": "検索結果に現れる記事のサンプル",
+  "published_at": "2026-06-05T19:00:00Z",
+  "is_date_estimated": false,
+  "hatebu_count": 15,
+  "feed_title": "Search Source Feed",
+  "favicon_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "is_read": false,
+  "is_starred": false
+}

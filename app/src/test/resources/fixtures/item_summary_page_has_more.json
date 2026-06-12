@@ -1,0 +1,31 @@
+{
+  "items": [
+    {
+      "id": "01HGY8K9ZQ4N7TXVY1F8M9R3P1",
+      "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FE",
+      "title": "ページ 1 の記事 A",
+      "link": "https://example.com/page-1-a",
+      "summary": "概要 A",
+      "published_at": "2026-06-10T09:00:00Z",
+      "is_date_estimated": false,
+      "is_read": false,
+      "is_starred": false,
+      "hatebu_count": 1,
+      "hatebu_fetched_at": "2026-06-10T10:00:00Z"
+    },
+    {
+      "id": "01HGY8K9ZQ4N7TXVY1F8M9R3P2",
+      "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FE",
+      "title": "ページ 1 の記事 B",
+      "link": "https://example.com/page-1-b",
+      "summary": "概要 B",
+      "published_at": "2026-06-10T08:00:00Z",
+      "is_date_estimated": true,
+      "is_read": true,
+      "is_starred": false,
+      "hatebu_count": 0
+    }
+  ],
+  "next_cursor": "2026-06-10T08:00:00Z:01HGY8K9ZQ4N7TXVY1F8M9R3P2",
+  "has_more": true
+}

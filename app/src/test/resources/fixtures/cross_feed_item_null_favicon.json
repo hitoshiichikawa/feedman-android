@@ -1,0 +1,14 @@
+{
+  "id": "01HGY8K9ZQ4N7TXVY1F8M9R3CB",
+  "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FE",
+  "feed_title": "Untitled Feed",
+  "feed_favicon_url": null,
+  "title": "推定日時の記事",
+  "link": "https://example.com/blog/estimated",
+  "summary": "発行日時が推定されたケース",
+  "published_at": "2026-06-09T00:00:00Z",
+  "is_date_estimated": true,
+  "is_read": true,
+  "is_starred": false,
+  "hatebu_count": 0
+}

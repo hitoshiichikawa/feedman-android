@@ -1,0 +1,17 @@
+{
+  "id": "01HGY8K9ZQ4N7TXVY1F8M9R3UN",
+  "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FE",
+  "title": "未知のキーを含む記事",
+  "link": "https://example.com/unknown-keys",
+  "summary": "サーバー側で将来追加されるかもしれないキーを含む",
+  "published_at": "2026-06-04T12:00:00Z",
+  "is_date_estimated": false,
+  "is_read": false,
+  "is_starred": false,
+  "hatebu_count": 99,
+  "hatebu_fetched_at": "2026-06-04T13:00:00Z",
+  "future_field": "ignored by decoder",
+  "another_unknown": {
+    "nested": [1, 2, 3]
+  }
+}
