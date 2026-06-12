@@ -37,7 +37,7 @@ import javax.inject.Singleton
 @Singleton
 class CrossFeedRepositoryImpl @Inject constructor(
     private val api: FeedmanApi,
-) : CrossFeedRepository {
+) : CrossFeedRepository, UserScopedCache {
 
     /** ページサイズ（SPEC §4.2: 50 件/回・上限 200）。Req 1.1 / 2.4。 */
     private val pageSize: Int = PAGE_SIZE
@@ -125,6 +125,22 @@ class CrossFeedRepositoryImpl @Inject constructor(
             nextCursor = response.nextCursor,
             hasMore = response.hasMore,
         )
+    }
+
+    /**
+     * ログアウト時にセッション固定の `since_time` を破棄する（Issue #50 Req 3.1）。
+     *
+     * 新たな Pager セッションが開始されるたびに [newPagingSource] が値を `null` に戻すため
+     * 本リセットは「ログアウト後に新ユーザーがログインしてから最初の Pager 再生成までの
+     * 間に、誤って前ユーザーの `since_time` を持ち込まないこと」を保証する念のための操作。
+     *
+     * 現状の AppShell は LoggedOut → LoggedIn 遷移で `LoggedInShell` 配下の Composable と
+     * ViewModel が再生成されるため、Pager 自体も新しいものが起動する。本リセットは
+     * 「DI Singleton として CrossFeedRepositoryImpl が長寿命のため、状態が前ユーザーから
+     * 持ち込まれないこと」を明示するための観測可能 reset である。
+     */
+    override suspend fun reset() {
+        sessionSinceTime = null
     }
 
     companion object {

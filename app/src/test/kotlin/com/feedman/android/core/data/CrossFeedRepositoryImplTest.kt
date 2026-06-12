@@ -480,4 +480,33 @@ class CrossFeedRepositoryImplTest {
         // Assert
         assertEquals("2026-06-12T09:30:00Z", repo.currentSinceTime)
     }
+
+    // ---- Issue #50 Req 3.1: ログアウト時の reset ---------------------------
+
+    @Test
+    fun `Issue50 Req 3_1 reset で sessionSinceTime が null に戻る`() = runTest {
+        // Arrange: 初回ロードで since_time を固定
+        val body = FixtureLoader.load("cross_feed_page.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(body))
+        val repo = newRepository()
+        val source = repo.newPagingSource()
+        source.load(
+            PagingSource.LoadParams.Refresh(key = null, loadSize = 50, placeholdersEnabled = false),
+        )
+        assertNotNull(repo.currentSinceTime)
+
+        // Act
+        repo.reset()
+
+        // Assert
+        assertNull("reset 後の currentSinceTime は null", repo.currentSinceTime)
+    }
+
+    @Test
+    fun `Issue50 Req 3_1 reset は冪等で例外を投げない`() = runTest {
+        val repo = newRepository()
+        repo.reset()
+        repo.reset()
+        assertNull(repo.currentSinceTime)
+    }
 }

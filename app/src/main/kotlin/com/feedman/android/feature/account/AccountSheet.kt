@@ -93,18 +93,24 @@ fun AccountSheet(
             state = state,
             onClose = viewModel::close,
             onRetry = viewModel::retry,
+            onLogout = viewModel::logout,
         )
     }
 }
 
 /**
  * ステートレスなシート本体（テスト / プレビュー流用しやすい）。
+ *
+ * @param onLogout Issue #50 Req 1.2: ログアウトボタンタップのコールバック。
+ *   進行中の二度押しは ViewModel 側でも no-op となるが、UI も `enabled = !logoutInProgress`
+ *   でガードする。
  */
 @Composable
 internal fun AccountSheetBody(
     state: AccountSheetUiState.Visible,
     onClose: () -> Unit,
     onRetry: () -> Unit,
+    onLogout: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         AccountSheetHeader(
@@ -113,8 +119,95 @@ internal fun AccountSheetBody(
             onRetry = onRetry,
         )
         HorizontalDivider(color = MaterialTheme.feedmanColors.border)
+        // Issue #50 Req 1.1 / 1.2 / 1.3 / 1.4: ログアウトボタン領域
+        AccountSheetLogoutSection(
+            logoutInProgress = state.logoutInProgress,
+            onLogout = onLogout,
+        )
     }
 }
+
+/**
+ * Issue #50 Req 1.1〜1.4: ログアウト操作領域。
+ *
+ * - Req 1.1: ログアウトボタン（TextButton）を常時表示
+ * - Req 1.2: タップで [onLogout] を 1 回呼び出す
+ * - Req 1.3: `logoutInProgress = true` のときボタンを disabled にする（多重起動防止）
+ * - Req 1.4 / NFR 1.1: 進行中の視覚表現として [CircularProgressIndicator] を併置する
+ *
+ * シートを閉じる導線（[onClose]）と独立した行に配置する。プロトタイプ FMAccountSheet 上では
+ * フッタ位置にログアウト操作が置かれる想定だが、本実装ではシート上段（ユーザー情報の下、
+ * 区切り線直下）に置き、Material 3 の TextButton で表現する（後続 Issue でデザインの
+ * 細部調整が入る場合に最小差分で済むよう、現時点ではミニマルな配置とする）。
+ */
+@Composable
+private fun AccountSheetLogoutSection(
+    logoutInProgress: Boolean,
+    onLogout: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .testTag(ACCOUNT_SHEET_LOGOUT_ROW_TEST_TAG)
+            .semantics {
+                if (logoutInProgress) {
+                    // NFR 1.1: 進行中であることをスクリーンリーダーに伝える
+                    liveRegion = LiveRegionMode.Polite
+                }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TextButton(
+            onClick = onLogout,
+            enabled = !logoutInProgress,
+            modifier = Modifier
+                .sizeIn(
+                    minHeight = MaterialTheme.feedmanDimens.minTapTarget,
+                )
+                .testTag(ACCOUNT_SHEET_LOGOUT_BUTTON_TEST_TAG),
+        ) {
+            Text(
+                text = stringResource(R.string.account_sheet_logout_button),
+                color = if (logoutInProgress) {
+                    MaterialTheme.feedmanColors.mutedFg
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        if (logoutInProgress) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(16.dp)
+                    .testTag(ACCOUNT_SHEET_LOGOUT_PROGRESS_TEST_TAG)
+                    .semantics {
+                        contentDescription = ""
+                    },
+                strokeWidth = 2.dp,
+            )
+            Text(
+                text = stringResource(R.string.account_sheet_logout_in_progress),
+                color = MaterialTheme.feedmanColors.mutedFg,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+/** ログアウト操作領域全体の testTag（テスト用 anchor）。 */
+const val ACCOUNT_SHEET_LOGOUT_ROW_TEST_TAG: String = "feature.account.AccountSheet.logout.row"
+
+/** ログアウトボタン自体の testTag。 */
+const val ACCOUNT_SHEET_LOGOUT_BUTTON_TEST_TAG: String =
+    "feature.account.AccountSheet.logout.button"
+
+/** ログアウト進行中インジケータの testTag。 */
+const val ACCOUNT_SHEET_LOGOUT_PROGRESS_TEST_TAG: String =
+    "feature.account.AccountSheet.logout.progress"
 
 /**
  * ユーザー領域 + 閉じるアイコン（プロトタイプ FMAccountSheet の上段に相当）。

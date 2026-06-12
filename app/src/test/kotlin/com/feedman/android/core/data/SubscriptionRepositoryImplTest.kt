@@ -661,4 +661,55 @@ class SubscriptionRepositoryImplTest {
         val after = repo.observeSubscriptions().first().single()
         assertEquals(before.unreadCount, after.unreadCount)
     }
+
+    // ===== Issue #50: ログアウト時のキャッシュリセット =====
+
+    @Test
+    fun `Issue50 Req 3_1 reset で購読リストと load state が初期状態に戻る`() = runTest {
+        // Arrange: 一旦 Success 状態 + リストありにする
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first()
+        assertEquals(1, before.size)
+        assertEquals(SubscriptionLoadState.Success, repo.observeLoadState().first())
+
+        // Act
+        repo.reset()
+
+        // Assert: リストは空、load state は Idle
+        val after = repo.observeSubscriptions().first()
+        assertTrue("reset 後の購読リストは空であるべき", after.isEmpty())
+        assertEquals(SubscriptionLoadState.Idle, repo.observeLoadState().first())
+    }
+
+    @Test
+    fun `Issue50 Req 3_1 reset 後でも refresh は通常通り動作する`() = runTest {
+        // Arrange
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+        repo.reset()
+        assertTrue(repo.observeSubscriptions().first().isEmpty())
+
+        // Act: 新セッションを想定し refresh
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        repo.refresh()
+
+        // Assert
+        val after = repo.observeSubscriptions().first()
+        assertEquals(1, after.size)
+        assertEquals(SubscriptionLoadState.Success, repo.observeLoadState().first())
+    }
+
+    @Test
+    fun `Issue50 Req 3_1 reset は冪等で例外を投げない`() = runTest {
+        val repo = newRepository()
+        repo.reset()
+        repo.reset()
+        assertTrue(repo.observeSubscriptions().first().isEmpty())
+        assertEquals(SubscriptionLoadState.Idle, repo.observeLoadState().first())
+    }
 }

@@ -1,6 +1,7 @@
 package com.feedman.android.feature.account
 
 import app.cash.turbine.test
+import com.feedman.android.core.auth.LogoutCoordinator
 import com.feedman.android.core.data.UserRepository
 import com.feedman.android.core.model.User
 import com.feedman.android.core.network.FeedmanException
@@ -13,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -44,7 +46,7 @@ class AccountSheetViewModelTest {
 
     @Test
     fun `初期状態は Hidden_Req 1_1`() = runTest {
-        val vm = AccountSheetViewModel(repository = StubUserRepository())
+        val vm = newVm(repository =StubUserRepository())
         assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
     }
 
@@ -53,7 +55,7 @@ class AccountSheetViewModelTest {
         // Arrange
         val user = User(id = "u1", email = "alice@example.com")
         val repo = StubUserRepository(result = user)
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act
         vm.open()
@@ -71,7 +73,7 @@ class AccountSheetViewModelTest {
         // Arrange: suspend した状態で取得結果を保留する
         val gate = CompletableDeferred<User>()
         val repo = StubUserRepository(suspendUntil = gate)
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act
         vm.open()
@@ -89,7 +91,7 @@ class AccountSheetViewModelTest {
         // Arrange: email が空（UI 側で代替文言を選ぶ責務）
         val user = User(id = "u1", email = "")
         val repo = StubUserRepository(result = user)
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act
         vm.open()
@@ -107,7 +109,7 @@ class AccountSheetViewModelTest {
         // Arrange
         val user = User(id = "u1", email = "alice@example.com")
         val repo = StubUserRepository(result = user)
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act: open → close → 再 open
         vm.open()
@@ -127,7 +129,7 @@ class AccountSheetViewModelTest {
     fun `Visible 状態で open を呼んでも何もしない 多重起動回避`() = runTest {
         val user = User(id = "u1", email = "alice@example.com")
         val repo = StubUserRepository(result = user)
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
         vm.open()
         val first = repo.callCount
 
@@ -148,7 +150,7 @@ class AccountSheetViewModelTest {
                 errorMessage = FeedmanException.FALLBACK_NETWORK_MESSAGE,
             ),
         )
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act
         vm.open()
@@ -168,7 +170,7 @@ class AccountSheetViewModelTest {
                 errorMessage = "",
             ),
         )
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act
         vm.open()
@@ -194,7 +196,7 @@ class AccountSheetViewModelTest {
                 StubResult.Success(user),
             ),
         )
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
         vm.open()
         assertTrue(
             (vm.uiState.value as AccountSheetUiState.Visible).loadState
@@ -215,7 +217,7 @@ class AccountSheetViewModelTest {
     fun `Loaded 状態で retry を呼んでも no-op_不正呼び出し防御`() = runTest {
         val user = User(id = "u1", email = "alice@example.com")
         val repo = StubUserRepository(result = user)
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
         vm.open()
         val first = repo.callCount
 
@@ -227,7 +229,7 @@ class AccountSheetViewModelTest {
 
     @Test
     fun `Hidden 状態で retry を呼んでも no-op`() = runTest {
-        val vm = AccountSheetViewModel(repository = StubUserRepository())
+        val vm = newVm(repository =StubUserRepository())
         vm.retry()
         assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
     }
@@ -244,7 +246,7 @@ class AccountSheetViewModelTest {
                 httpStatus = 401,
             ),
         )
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act + Assert
         vm.events.test {
@@ -267,7 +269,7 @@ class AccountSheetViewModelTest {
                 httpStatus = 401,
             ),
         )
-        val vm = AccountSheetViewModel(repository = repo)
+        val vm = newVm(repository =repo)
 
         // Act
         vm.open()
@@ -281,11 +283,134 @@ class AccountSheetViewModelTest {
     @Test
     fun `Visible 状態で close すると Hidden に戻る`() = runTest {
         val user = User(id = "u1", email = "alice@example.com")
-        val vm = AccountSheetViewModel(repository = StubUserRepository(result = user))
+        val vm = newVm(repository =StubUserRepository(result = user))
         vm.open()
         vm.close()
         assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
     }
+
+    // ── Issue #50: ログアウト振る舞い ─────────────────────────
+
+    @Test
+    fun `Issue50 Req 1_2 logout で LogoutCoordinator perform が 1 回呼ばれる`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val logout = StubLogoutCoordinator()
+        val vm = newVm(repository = StubUserRepository(result = user), logout = logout)
+        vm.open()
+
+        vm.logout()
+
+        assertEquals(1, logout.callCount)
+    }
+
+    @Test
+    fun `Issue50 Req 1_3 logout 中の再 logout 呼び出しは無視される`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val gate = CompletableDeferred<Unit>()
+        val logout = StubLogoutCoordinator(suspendUntil = gate)
+        val vm = newVm(repository = StubUserRepository(result = user), logout = logout)
+        vm.open()
+        vm.logout()
+        // gate を完了させずに同時押下を再現
+        vm.logout()
+        vm.logout()
+
+        // 進行中の 1 件のみ起動
+        assertEquals(1, logout.callCount)
+
+        // ゲートを開いて 1 件完了させる
+        gate.complete(Unit)
+    }
+
+    @Test
+    fun `Issue50 Req 1_3 1_4 logout 中は logoutInProgress true_完了で Hidden`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val gate = CompletableDeferred<Unit>()
+        val logout = StubLogoutCoordinator(suspendUntil = gate)
+        val vm = newVm(repository = StubUserRepository(result = user), logout = logout)
+        vm.open()
+
+        vm.logout()
+
+        // Req 1.3 / 1.4: 進行中
+        val mid = vm.uiState.value as AccountSheetUiState.Visible
+        assertTrue("logoutInProgress は true", mid.logoutInProgress)
+
+        // ゲートを開いて完了させる
+        gate.complete(Unit)
+
+        // Req 4.3: Hidden に戻る
+        assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
+    }
+
+    @Test
+    fun `Issue50 Req 3_3 logout 後の再 open では cachedUser が再現せず再フェッチが走る`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val repo = StubUserRepository(result = user)
+        val logout = StubLogoutCoordinator()
+        val vm = newVm(repository = repo, logout = logout)
+
+        // 1 回目の open: 取得して cache
+        vm.open()
+        assertEquals(1, repo.callCount)
+
+        // logout で cachedUser を破棄
+        vm.logout()
+        assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
+
+        // 2 回目の open: 再フェッチが走る（cachedUser が破棄されたため）
+        vm.open()
+        assertEquals("再フェッチが走るべき", 2, repo.callCount)
+    }
+
+    @Test
+    fun `Issue50 Req 1_2 Hidden 状態での logout は no-op_LogoutCoordinator を呼ばない`() = runTest {
+        val logout = StubLogoutCoordinator()
+        val vm = newVm(repository = StubUserRepository(), logout = logout)
+        // open しない（Hidden のまま）
+
+        vm.logout()
+
+        assertEquals(0, logout.callCount)
+    }
+
+    @Test
+    fun `Issue50 Req 5_2 logout 中に進行中の fetchJob があればキャンセルする`() = runTest {
+        // Arrange: fetchJob を suspend させて active 状態を作る
+        val fetchGate = CompletableDeferred<User>()
+        val repo = StubUserRepository(suspendUntil = fetchGate)
+        val logout = StubLogoutCoordinator()
+        val vm = newVm(repository = repo, logout = logout)
+        vm.open()
+        // この時点で fetch は suspendUntil で保留中
+        val midOpen = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.LoadState.Loading, midOpen.loadState)
+
+        // Act: logout を呼ぶと fetchJob はキャンセルされる
+        vm.logout()
+
+        // Assert: logout は呼ばれる（fetch のキャンセルは観測可能挙動として副作用が無くなる）
+        assertEquals(1, logout.callCount)
+
+        // Cleanup
+        fetchGate.complete(User(id = "x", email = "y"))
+    }
+
+    // ── helpers ─────────────────────────────────────────────────────
+
+    /**
+     * テスト用 [AccountSheetViewModel] ファクトリ。
+     *
+     * - `repository`: 必須
+     * - `logout`: 省略時は [StubLogoutCoordinator]（perform で何もしない fake）を使う
+     */
+    private fun newVm(
+        repository: UserRepository,
+        logout: LogoutCoordinator = StubLogoutCoordinator(),
+    ): AccountSheetViewModel = AccountSheetViewModel(
+        repository = repository,
+        logoutCoordinator = logout,
+    )
 }
 
 // ── テストダブル ─────────────────────────────────────────────
@@ -333,5 +458,24 @@ internal class StubUserRepository(
 
         exception?.let { throw it }
         return result ?: error("StubUserRepository: no result configured")
+    }
+}
+
+/**
+ * テスト用 [LogoutCoordinator] スタブ（Issue #50）。
+ *
+ * - 既定: `perform()` で何もしない（呼び出し回数のみ記録）
+ * - `suspendUntil` を指定すると、それが完了するまで perform を保留する（進行中状態の検証用）
+ */
+internal class StubLogoutCoordinator(
+    private val suspendUntil: CompletableDeferred<Unit>? = null,
+) : LogoutCoordinator {
+
+    var callCount: Int = 0
+        private set
+
+    override suspend fun perform() {
+        callCount++
+        suspendUntil?.await()
     }
 }

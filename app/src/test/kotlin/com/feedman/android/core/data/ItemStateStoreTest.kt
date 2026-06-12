@@ -313,6 +313,53 @@ class ItemStateStoreTest {
         assertEquals(true, repo.updateStateCalls[0].isRead)
     }
 
+    // ── reset / Issue #50 Req 3.1 ──────────────────────────────────
+
+    @Test
+    fun `reset で overlay が空になる_Issue 50 Req 3_1`() = runTest {
+        // Arrange
+        val repo = FakeRepo()
+        val store = ItemStateStore(repository = repo, scope = backgroundScope())
+        store.setRead(itemId = "r1", isRead = true, baselineRead = false)
+        store.setStarred(itemId = "s1", isStarred = true, baselineStarred = false)
+        val before = store.overlays.first()
+        assertEquals(true, before["r1"]?.isRead)
+        assertEquals(true, before["s1"]?.isStarred)
+
+        // Act
+        store.reset()
+
+        // Assert: overlay が空になる
+        val after = store.overlays.first()
+        assertTrue("reset 後の overlay は空であるべき", after.isEmpty())
+    }
+
+    @Test
+    fun `reset 後でも setRead で再度 overlay を書き込める_Issue 50 Req 3_1`() = runTest {
+        // Arrange
+        val repo = FakeRepo()
+        val store = ItemStateStore(repository = repo, scope = backgroundScope())
+        store.setRead(itemId = "a", isRead = true, baselineRead = false)
+        store.reset()
+
+        // Act
+        store.setRead(itemId = "b", isRead = true, baselineRead = false)
+
+        // Assert: 削除された a は復活せず、b は書き込まれる
+        val overlay = store.overlays.first()
+        assertEquals(true, overlay["b"]?.isRead)
+        assertNull("reset で削除された 'a' は復活しない", overlay["a"])
+    }
+
+    @Test
+    fun `reset は冪等_2 回連続呼び出しでも例外を投げない_Issue 50 Req 3_1`() = runTest {
+        val repo = FakeRepo()
+        val store = ItemStateStore(repository = repo, scope = backgroundScope())
+        store.reset()
+        store.reset()
+        assertTrue(store.overlays.first().isEmpty())
+    }
+
     // ── helpers ──────────────────────────────────────────────────────
 
     private fun backgroundScope(): CoroutineScope =
