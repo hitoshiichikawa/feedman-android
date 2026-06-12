@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "リクエストパラメータが不正です。",
+    "category": "client",
+    "action": "fix_input"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "URL の形式が正しくありません。",
+    "category": "client",
+    "action": "fix_input",
+    "details": {
+      "field": "url"
+    }
+  }
+}
