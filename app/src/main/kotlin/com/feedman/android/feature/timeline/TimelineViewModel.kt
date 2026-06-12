@@ -3,7 +3,7 @@ package com.feedman.android.feature.timeline
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feedman.android.core.data.ItemRepository
-import com.feedman.android.core.model.ItemSummary
+import com.feedman.android.core.model.MockTimelineItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,5 +42,5 @@ class TimelineViewModel @Inject constructor(
  * @property items Article snapshot to render in the timeline list.
  */
 data class TimelineUiState(
-    val items: List<ItemSummary> = emptyList(),
+    val items: List<MockTimelineItem> = emptyList(),
 )

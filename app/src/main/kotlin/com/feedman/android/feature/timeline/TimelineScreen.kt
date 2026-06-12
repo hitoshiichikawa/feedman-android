@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.feedman.android.R
-import com.feedman.android.core.model.ItemSummary
+import com.feedman.android.core.model.MockTimelineItem
 
 /**
  * Stateful entry point for the timeline route (Req 4.4).
@@ -58,14 +58,14 @@ internal fun TimelineList(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(items = state.items, key = ItemSummary::id) { item ->
+        items(items = state.items, key = MockTimelineItem::id) { item ->
             TimelineRow(item = item)
         }
     }
 }
 
 @Composable
-private fun TimelineRow(item: ItemSummary) {
+private fun TimelineRow(item: MockTimelineItem) {
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(
             text = item.title,

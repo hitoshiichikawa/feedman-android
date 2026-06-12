@@ -12,7 +12,7 @@ import org.junit.Test
 class FakeItemRepositoryTest {
 
     @Test
-    fun `observeTimeline emits at least one ItemSummary on subscription`() = runTest {
+    fun `observeTimeline emits at least one MockTimelineItem on subscription`() = runTest {
         // Arrange
         val repository = FakeItemRepository()
 
@@ -20,7 +20,7 @@ class FakeItemRepositoryTest {
         repository.observeTimeline().test {
             val first = awaitItem()
             assertTrue(
-                "Fake repository must emit at least one ItemSummary so that the " +
+                "Fake repository must emit at least one MockTimelineItem so that the " +
                     "mock-mode timeline is observably non-empty (Req 4.4).",
                 first.isNotEmpty(),
             )
@@ -45,8 +45,8 @@ class FakeItemRepositoryTest {
     fun `observeTimeline is independent across multiple subscribers`() = runTest {
         // Arrange
         val repository = FakeItemRepository()
-        var first: List<com.feedman.android.core.model.ItemSummary> = emptyList()
-        var second: List<com.feedman.android.core.model.ItemSummary> = emptyList()
+        var first: List<com.feedman.android.core.model.MockTimelineItem> = emptyList()
+        var second: List<com.feedman.android.core.model.MockTimelineItem> = emptyList()
 
         // Act
         repository.observeTimeline().test {

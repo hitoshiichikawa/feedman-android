@@ -2,7 +2,7 @@ package com.feedman.android.feature.timeline
 
 import app.cash.turbine.test
 import com.feedman.android.core.data.ItemRepository
-import com.feedman.android.core.model.ItemSummary
+import com.feedman.android.core.model.MockTimelineItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -40,8 +40,8 @@ class TimelineViewModelTest {
     fun `uiState exposes items emitted by the injected repository`() = runTest {
         // Arrange
         val items = listOf(
-            ItemSummary(id = "a", title = "t-a", feedName = "f", publishedAt = "now"),
-            ItemSummary(id = "b", title = "t-b", feedName = "f", publishedAt = "now"),
+            MockTimelineItem(id = "a", title = "t-a", feedName = "f", publishedAt = "now"),
+            MockTimelineItem(id = "b", title = "t-b", feedName = "f", publishedAt = "now"),
         )
         val viewModel = TimelineViewModel(repository = StubItemRepository(flowOf(items)))
 
@@ -66,14 +66,14 @@ class TimelineViewModelTest {
         // Act + Assert
         viewModel.uiState.test {
             val first = awaitItem()
-            assertEquals(emptyList<ItemSummary>(), first.items)
+            assertEquals(emptyList<MockTimelineItem>(), first.items)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     private class StubItemRepository(
-        private val source: Flow<List<ItemSummary>>,
+        private val source: Flow<List<MockTimelineItem>>,
     ) : ItemRepository {
-        override fun observeTimeline(): Flow<List<ItemSummary>> = source
+        override fun observeTimeline(): Flow<List<MockTimelineItem>> = source
     }
 }

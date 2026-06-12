@@ -118,6 +118,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
 
+    // Serialization (Issue #15: API ドメインモデル decode で利用)
+    implementation(libs.kotlinx.serialization.json)
+
     // Test
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

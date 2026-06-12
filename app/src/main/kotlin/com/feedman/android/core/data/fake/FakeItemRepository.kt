@@ -1,7 +1,7 @@
 package com.feedman.android.core.data.fake
 
 import com.feedman.android.core.data.ItemRepository
-import com.feedman.android.core.model.ItemSummary
+import com.feedman.android.core.model.MockTimelineItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import javax.inject.Inject
@@ -17,23 +17,23 @@ import javax.inject.Singleton
 @Singleton
 class FakeItemRepository @Inject constructor() : ItemRepository {
 
-    override fun observeTimeline(): Flow<List<ItemSummary>> = flowOf(MOCK_ITEMS)
+    override fun observeTimeline(): Flow<List<MockTimelineItem>> = flowOf(MOCK_ITEMS)
 
     companion object {
-        internal val MOCK_ITEMS: List<ItemSummary> = listOf(
-            ItemSummary(
+        internal val MOCK_ITEMS: List<MockTimelineItem> = listOf(
+            MockTimelineItem(
                 id = "mock-1",
                 title = "Feedman Android スケルトンを作成しました",
                 feedName = "Feedman Dev Blog",
                 publishedAt = "10 分前",
             ),
-            ItemSummary(
+            MockTimelineItem(
                 id = "mock-2",
                 title = "Jetpack Compose Material 3 の最新動向",
                 feedName = "Android Developers",
                 publishedAt = "1 時間前",
             ),
-            ItemSummary(
+            MockTimelineItem(
                 id = "mock-3",
                 title = "Kotlin Coroutines 1.9 のリリースノート",
                 feedName = "Kotlin Blog",
