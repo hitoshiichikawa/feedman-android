@@ -28,6 +28,24 @@ sealed interface SubscriptionSettingsUiState {
     data object Hidden : SubscriptionSettingsUiState
 
     /**
+     * Issue #52 Req 5.1: シートを開いた直後で、対象 Subscription の初回読み込み（observeFeed の
+     * 最初の emission）がまだ得られていない状態。シートは表示し、内部にローディングインジケータ
+     * を描画する。`feedId` を保持しておくことでリトライ時に再 open できる（Req 5.3）。
+     *
+     * @property feedId 対象 [Subscription.feedId]
+     */
+    data class Loading(val feedId: String) : SubscriptionSettingsUiState
+
+    /**
+     * Issue #52 Req 5.2: シートを開いたが対象 Subscription が repository 上に見つからず、
+     * 初回データ取得が「失敗（未存在）」として確定した状態。シート内にメッセージと再試行手段を
+     * 描画し、ユーザーは「閉じる」以外に「再試行」を選択できる（dead-end 回避）。
+     *
+     * @property feedId 対象 [Subscription.feedId]
+     */
+    data class NotFound(val feedId: String) : SubscriptionSettingsUiState
+
+    /**
      * シート表示中。対象 Subscription とユーザー操作の一時状態を保持する。
      */
     data class Visible(

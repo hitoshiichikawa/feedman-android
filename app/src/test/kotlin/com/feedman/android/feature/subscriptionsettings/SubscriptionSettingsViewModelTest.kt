@@ -81,10 +81,64 @@ class SubscriptionSettingsViewModelTest {
     }
 
     @Test
-    fun `Repository が未存在 feedId を返したら Hidden のまま`() = runTest {
+    fun `Issue 52 Req 5_2 Repository が未存在 feedId を返したら NotFound に遷移する`() = runTest {
         val vm = SubscriptionSettingsViewModel(repository = StubRepository(emptyList()))
         vm.open("missing")
-        assertEquals(SubscriptionSettingsUiState.Hidden, vm.uiState.value)
+        // Issue #52 Req 5.2 / 5.3: Hidden ではなく NotFound でエラー + 再試行を露出する
+        // （dead-end 回避）。NotFound を表示することで「閉じる」以外の選択肢を残す。
+        val state = vm.uiState.value
+        assertTrue(
+            "expected NotFound but was $state",
+            state is SubscriptionSettingsUiState.NotFound,
+        )
+        assertEquals(
+            "missing",
+            (state as SubscriptionSettingsUiState.NotFound).feedId,
+        )
+    }
+
+    @Test
+    fun `Issue 52 Req 5_1 open 直後で観測前は Loading を経由する`() = runTest {
+        // Arrange: observeFeed が即時 emit せず suspend するスタブ
+        val sub = newSub(feedId = "feed-a", interval = 60)
+        val gateRepo = GateRepository(sub)
+        val vm = SubscriptionSettingsViewModel(repository = gateRepo)
+        // Act: open するが Flow は未 emit
+        vm.open("feed-a")
+        // Assert: Loading 状態でシートを描画できることを担保（dead-end 回避）
+        val state = vm.uiState.value
+        assertTrue(
+            "expected Loading but was $state",
+            state is SubscriptionSettingsUiState.Loading,
+        )
+        assertEquals(
+            "feed-a",
+            (state as SubscriptionSettingsUiState.Loading).feedId,
+        )
+        // 後段: Flow を流すと Visible に遷移する
+        gateRepo.emit(sub)
+        assertTrue(vm.uiState.value is SubscriptionSettingsUiState.Visible)
+    }
+
+    @Test
+    fun `Issue 52 Req 5_3 NotFound から retry で再観測する`() = runTest {
+        // Arrange: 最初は空、retry 後に対象が現れる
+        val target = newSub(feedId = "feed-a", interval = 60)
+        val repo = MutableRepository(initial = emptyList())
+        val vm = SubscriptionSettingsViewModel(repository = repo)
+        vm.open("feed-a")
+        assertTrue(vm.uiState.value is SubscriptionSettingsUiState.NotFound)
+
+        // Act: 別経路で subscription が追加された後 retry
+        repo.update(listOf(target))
+        vm.retry()
+
+        // Assert: Visible に遷移している
+        val state = vm.uiState.value
+        assertTrue(
+            "expected Visible after retry but was $state",
+            state is SubscriptionSettingsUiState.Visible,
+        )
     }
 
     // ── フェッチ間隔の初期選択 / 未選択 ───────────────────────────
@@ -444,5 +498,67 @@ class SubscriptionSettingsViewModelTest {
             unsubscribeException?.let { throw it }
             list.value = list.value.filterNot { it.id == subscriptionId }
         }
+    }
+
+    /**
+     * Issue #52 Req 5.1 専用テスト用 [SubscriptionRepository]。`observeFeed` は手動で
+     * [emit] が呼ばれるまで何も流さない（Flow は collect 中だが suspending state）。
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private class GateRepository(
+        target: Subscription,
+    ) : SubscriptionRepository {
+
+        private val list: MutableStateFlow<List<Subscription>> = MutableStateFlow(emptyList())
+
+        fun emit(sub: Subscription) {
+            list.value = listOf(sub)
+        }
+
+        override fun observeSubscriptions(): Flow<List<Subscription>> = list.asStateFlow()
+
+        override fun observeLoadState(): Flow<SubscriptionLoadState> =
+            flowOf(SubscriptionLoadState.Success)
+
+        override suspend fun refresh() {}
+
+        // `observeFeed` 既定実装は observeSubscriptions().mapToSingleByFeedId(feedId) を返すため、
+        // 上記 list が emit を待っている間は null すら流さない動作になることを意図する。
+        // しかし StateFlow は initial value（emptyList）を即座に流すため、collect の最初の値で
+        // mapToSingleByFeedId が null を返してしまう。テスト用にここでは observeFeed を override
+        // して、emit が呼ばれるまで何も流さない振る舞いをエミュレートする。
+        override fun observeFeed(feedId: String): Flow<Subscription?> =
+            list.asStateFlow().let { state ->
+                kotlinx.coroutines.flow.flow {
+                    state.collect { subs ->
+                        if (subs.isEmpty()) {
+                            // 空のときは何も流さず Loading を維持させる
+                            return@collect
+                        }
+                        emit(subs.firstOrNull { it.feedId == feedId })
+                    }
+                }
+            }
+    }
+
+    /**
+     * Issue #52 Req 5.3 用テスト helper。`update` で外部から購読リストを書き換え可能。
+     */
+    private class MutableRepository(
+        initial: List<Subscription>,
+    ) : SubscriptionRepository {
+
+        private val list: MutableStateFlow<List<Subscription>> = MutableStateFlow(initial)
+
+        fun update(subs: List<Subscription>) {
+            list.value = subs
+        }
+
+        override fun observeSubscriptions(): Flow<List<Subscription>> = list.asStateFlow()
+
+        override fun observeLoadState(): Flow<SubscriptionLoadState> =
+            flowOf(SubscriptionLoadState.Success)
+
+        override suspend fun refresh() {}
     }
 }

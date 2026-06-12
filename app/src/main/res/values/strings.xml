@@ -231,6 +231,8 @@
     <string name="subscription_settings_unsubscribe_confirm">解除</string>
     <!-- Req 4.2: 解除キャンセルボタン -->
     <string name="subscription_settings_unsubscribe_cancel">キャンセル</string>
+    <!-- Issue #52 Req 5.1 / 5.2: 購読設定シートで対象 Subscription が見つからない（初回データ取得失敗）ときのメッセージ -->
+    <string name="subscription_settings_not_found">この購読が見つかりません。ドロワーを開き直すと再試行できます</string>
 
     <!-- Issue #44: フィード登録シート（RegisterFeedSheet）固有文言 -->
     <!-- Req 1.1 / NFR 2.3: シートの pane title（スクリーンリーダー読み上げ） -->
