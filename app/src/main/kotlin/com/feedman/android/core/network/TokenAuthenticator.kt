@@ -3,6 +3,7 @@ package com.feedman.android.core.network
 import com.feedman.android.core.auth.AuthRepository
 import com.feedman.android.core.auth.RefreshResult
 import com.feedman.android.core.auth.TokenStore
+import dagger.Lazy
 import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
 import okhttp3.Request
@@ -47,9 +48,24 @@ import javax.inject.Singleton
  */
 @Singleton
 class TokenAuthenticator @Inject constructor(
-    private val authRepository: AuthRepository,
+    /**
+     * AuthRepository は内部で FeedmanApi に依存し、本 authenticator はその FeedmanApi に組み込まれる
+     * （AuthRepository ← TokenAuthenticator ← FeedmanApi ← AuthRepository の循環）。
+     * Hilt / Dagger の `Lazy` 経由で遅延解決することで構築時の循環を断つ。実行時には
+     * authenticate() が呼ばれるタイミングで AuthRepository が確実に解決されている前提。
+     */
+    private val authRepositoryLazy: Lazy<AuthRepository>,
     private val tokenStore: TokenStore,
 ) : Authenticator {
+
+    /** テストでは [Lazy] を介さず直接 AuthRepository を渡したいので 2 系統のコンストラクタを公開する。 */
+    constructor(authRepository: AuthRepository, tokenStore: TokenStore) : this(
+        authRepositoryLazy = Lazy { authRepository },
+        tokenStore = tokenStore,
+    )
+
+    private val authRepository: AuthRepository
+        get() = authRepositoryLazy.get()
 
     override fun authenticate(route: Route?, response: Response): Request? {
         // 1) 1 つの元リクエストに対する自動 refresh + 再試行は 1 回限り（Req 1.4 / NFR 1.1 / NFR 1.2）。

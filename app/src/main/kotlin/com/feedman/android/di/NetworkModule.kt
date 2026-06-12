@@ -4,6 +4,7 @@ import com.feedman.android.core.auth.AuthInterceptor
 import com.feedman.android.core.model.AppConfig
 import com.feedman.android.core.network.ApiClientFactory
 import com.feedman.android.core.network.FeedmanApi
+import com.feedman.android.core.network.TokenAuthenticator
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,8 +21,9 @@ import javax.inject.Singleton
  *   access token を `Authorization: Bearer <token>` として全 API リクエストへ付与する。
  *   認証不要エンドポイント（`/api/auth/token` / `/api/auth/refresh`）の除外は
  *   [AuthInterceptor] 内部で判定する（Req 4.3）。
- * - 401 自動 refresh + リトライを担う TokenAuthenticator は後続 Issue #22 で本モジュールへ
- *   `authenticator` として注入する想定。
+ * - Issue #22 で [TokenAuthenticator] を `authenticator` に結線。401 応答を受けたとき
+ *   AuthRepository.refresh()（#21 の単一飛行）に委譲して新 access token を取得し、
+ *   元リクエストを 1 回だけ再試行する。
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -32,11 +34,12 @@ object NetworkModule {
     fun provideFeedmanApi(
         appConfig: AppConfig,
         authInterceptor: AuthInterceptor,
+        tokenAuthenticator: TokenAuthenticator,
     ): FeedmanApi {
         return ApiClientFactory.create(
             baseUrl = appConfig.baseUrl,
             additionalInterceptors = listOf(authInterceptor),
-            authenticator = null,
+            authenticator = tokenAuthenticator,
         )
     }
 }
