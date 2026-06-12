@@ -1,6 +1,8 @@
 package com.feedman.android.di
 
 import com.feedman.android.core.auth.EncryptedPrefsTokenStore
+import com.feedman.android.core.auth.MockModeSessionStateProvider
+import com.feedman.android.core.auth.SessionStateProvider
 import com.feedman.android.core.auth.TokenStore
 import dagger.Binds
 import dagger.Module
@@ -26,4 +28,18 @@ abstract class AuthModule {
     @Binds
     @Singleton
     abstract fun bindTokenStore(impl: EncryptedPrefsTokenStore): TokenStore
+
+    /**
+     * [SessionStateProvider] の本番バインディング（Issue #29 / Req 3.5）。
+     *
+     * 本 Issue 時点では `MockModeSessionStateProvider` を採用し、`AppConfig.mockMode` に
+     * 応じて `LoggedIn` / `LoggedOut` を返す。Issue #24 系で本格的な実装に置き換える際は
+     * 本 `@Binds` の 1 行差し替えで済む。テスト時は `@TestInstallIn` か `@BindValue` で
+     * 任意の [SessionStateProvider] 実装を差し込めるよう、抽象 binding として宣言する。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindSessionStateProvider(
+        impl: MockModeSessionStateProvider,
+    ): SessionStateProvider
 }
