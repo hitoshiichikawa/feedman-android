@@ -178,6 +178,36 @@
     <!-- Req 4.2: 解除キャンセルボタン -->
     <string name="subscription_settings_unsubscribe_cancel">キャンセル</string>
 
+    <!-- Issue #44: フィード登録シート（RegisterFeedSheet）固有文言 -->
+    <!-- Req 1.1 / NFR 2.3: シートの pane title（スクリーンリーダー読み上げ） -->
+    <string name="register_feed_sheet_pane_title">フィードを登録</string>
+    <!-- Req 1.1 / NFR 2.1: 入力欄ラベル / a11y -->
+    <string name="register_feed_url_label">フィードまたはサイトの URL</string>
+    <!-- Req 1.2: 入力欄プレースホルダ -->
+    <string name="register_feed_url_placeholder">サイトの URL か RSS/Atom の URL を入力</string>
+    <!-- Req 1.2: 入力欄の補助説明（プレースホルダと同内容を支援テキストとして表示） -->
+    <string name="register_feed_url_helper">サーバーがサイト URL からフィードを自動検出します</string>
+    <!-- Req 1.5 / NFR 2.1: 閉じるボタンの a11y -->
+    <string name="register_feed_close_description">登録シートを閉じる</string>
+    <!-- Req 3.1 / NFR 2.1: 主アクション（送信）ボタン -->
+    <string name="register_feed_submit_button">登録</string>
+    <!-- Req 4.2: 成功トースト -->
+    <string name="register_feed_succeeded">フィードを登録しました</string>
+    <!-- Req 2.1: クライアント側 URL 不正エラー文言 -->
+    <string name="register_feed_invalid_url_format">URL の形式が正しくありません</string>
+    <!-- Req 5.1: 重複登録時のフォールバック文言 -->
+    <string name="register_feed_error_duplicate">このフィードはすでに登録されています</string>
+    <!-- Req 5.2: URL 不正・フィード未検出時のフォールバック文言 -->
+    <string name="register_feed_error_invalid_feed">このサイトでフィードを検出できませんでした</string>
+    <!-- Req 5.3: レート制限 + retry_after_seconds（残時間付き）-->
+    <string name="register_feed_error_rate_limit_with_seconds">登録が集中しています。あと %1$d 秒お待ちください</string>
+    <!-- Req 5.4: レート制限（残時間なしフォールバック）-->
+    <string name="register_feed_error_rate_limit_generic">しばらくしてから再度お試しください</string>
+    <!-- Req 5.5: 汎用エラーフォールバック -->
+    <string name="register_feed_error_generic">フィードの登録に失敗しました</string>
+    <!-- Req 5.6: ネットワーク到達不可 -->
+    <string name="register_feed_error_network">ネットワークに接続できません</string>
+
     <!-- Issue #42: 手動フェッチ（Pull-to-refresh）固有文言 -->
     <!-- Req 3.1 / 3.2: クールダウン応答時の snackbar 文言（残り秒数あり）-->
     <string name="feed_fetch_cooldown_with_seconds">あと %1$d 秒で再試行可能です</string>
