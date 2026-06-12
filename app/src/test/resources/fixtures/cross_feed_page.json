@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "id": "01HGY8K9ZQ4N7TXVY1F8M9R3X1",
+      "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FE",
+      "feed_title": "Feedman Dev Blog",
+      "feed_favicon_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "title": "横断新着 1",
+      "link": "https://example.com/cf-1",
+      "summary": "横断新着のサンプル 1",
+      "published_at": "2026-06-12T09:00:00Z",
+      "is_date_estimated": false,
+      "is_read": false,
+      "is_starred": false,
+      "hatebu_count": 8
+    },
+    {
+      "id": "01HGY8K9ZQ4N7TXVY1F8M9R3X2",
+      "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FF",
+      "feed_title": "Android Developers",
+      "feed_favicon_url": null,
+      "title": "横断新着 2",
+      "link": "https://example.com/cf-2",
+      "summary": "横断新着のサンプル 2（推定日時）",
+      "published_at": "2026-06-12T08:30:00Z",
+      "is_date_estimated": true,
+      "is_read": true,
+      "is_starred": true,
+      "hatebu_count": 0
+    }
+  ],
+  "next_cursor": "2026-06-12T08:30:00Z:01HGY8K9ZQ4N7TXVY1F8M9R3X2",
+  "has_more": true,
+  "since_time": "2026-06-12T09:30:00Z"
+}

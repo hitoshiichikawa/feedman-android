@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "01HGY8K9ZQ4N7TXVY1F8M9R3P9",
+      "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FE",
+      "title": "最後のページの記事",
+      "link": "https://example.com/last",
+      "summary": "終端ページのサンプル",
+      "published_at": "2026-05-01T00:00:00Z",
+      "is_date_estimated": false,
+      "is_read": true,
+      "is_starred": false,
+      "hatebu_count": 5,
+      "hatebu_fetched_at": null
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}

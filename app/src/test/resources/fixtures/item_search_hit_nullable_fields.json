@@ -1,0 +1,14 @@
+{
+  "id": "01HGY8K9ZQ4N7TXVY1F8M9R3D6",
+  "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FF",
+  "title": "published_at と favicon_url が null の検索ヒット",
+  "link": "https://example.com/search/hit-2",
+  "summary": "nullable フィールドが null のケース",
+  "published_at": null,
+  "is_date_estimated": true,
+  "hatebu_count": 0,
+  "feed_title": "Unknown Source",
+  "favicon_url": null,
+  "is_read": true,
+  "is_starred": false
+}
