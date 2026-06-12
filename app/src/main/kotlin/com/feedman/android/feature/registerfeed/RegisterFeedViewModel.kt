@@ -3,6 +3,8 @@ package com.feedman.android.feature.registerfeed
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feedman.android.core.data.FeedRegistrationRepository
+import com.feedman.android.core.data.SubscriptionLoadState
+import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.network.FeedmanException
 import com.feedman.android.core.ui.UrlValidation
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,6 +36,15 @@ import javax.inject.Inject
 @HiltViewModel
 class RegisterFeedViewModel @Inject constructor(
     private val repository: FeedRegistrationRepository,
+    /**
+     * Issue #45 Req 1.1: 登録成功直後に `refresh()` を 1 回呼び出し、ドロワーの購読一覧を
+     * 最新化するための依存。Issue #44 までは未注入だったが、#45 で登録 → ドロワー反映の
+     * ワイヤリングを追加するため [SubscriptionRepository] をコンストラクタ注入する。
+     *
+     * 公開 IF は変更せず（NFR 2.1）、本 ViewModel 内部で [SubscriptionRepository.refresh]
+     * と [SubscriptionRepository.observeLoadState] を直接利用する。
+     */
+    private val subscriptionRepository: SubscriptionRepository,
 ) : ViewModel() {
 
     private val _uiState: MutableStateFlow<RegisterFeedUiState> =
@@ -141,12 +153,24 @@ class RegisterFeedViewModel @Inject constructor(
                 repository.register(trimmed)
                 // Req 4.1: 成功でシートを閉じる
                 // Req 4.2: トースト発火（UI 側で表示）
+                // Issue #45 NFR 1.2: 登録成功フィードバック（トースト＋シートクローズ）は
+                // 購読一覧再取得の完了を待たずに進める。RegistrationSucceeded を先に
+                // emit してから refresh を起動することで、UI フィードバックが refresh の
+                // 結果に左右されない（Req 1.3: 一方の失敗が他方を抑制しない）。
                 _events.emit(RegisterFeedEvent.RegistrationSucceeded)
                 close()
+                // Issue #45 Req 1.1 / 1.4 / NFR 1.1: 登録成功応答直後に追加操作なしで
+                // refresh() を 1 回呼ぶ。SubscriptionRepository.refresh() は契約上例外を
+                // 投げず、結果は observeLoadState() に Success / Error として反映される
+                // ため、呼び出し側で try/catch は不要。失敗時は Error 状態を 1 回観測して
+                // SubscriptionRefreshFailed を UI 側に通知する（Req 3.1〜3.3）。
+                triggerSubscriptionRefresh()
             } catch (e: FeedmanException) {
+                // Req 4.1: 登録失敗時は refresh を呼ばない（catch 内で early return）
                 handleServerError(e)
             } catch (e: Exception) {
                 // 予期しない例外は汎用フォールバック（Req 5.5）
+                // Req 4.2: ネットワーク失敗等の登録失敗時も refresh を呼ばない
                 handleServerError(
                     FeedmanException(
                         code = FeedmanException.CODE_UNKNOWN_ERROR,
@@ -155,6 +179,30 @@ class RegisterFeedViewModel @Inject constructor(
                     ),
                 )
             }
+        }
+    }
+
+    /**
+     * Issue #45 Req 1.1 / 3.1 / 3.2 / 3.3: 登録成功直後の購読一覧再取得を起動し、結果が
+     * 失敗であれば AppShell へ非ブロッキングなエラーイベントを発行する。
+     *
+     * - `SubscriptionRepository.refresh()` は契約上例外を投げず、結果を `observeLoadState()`
+     *   経由で Loading → Success / Error として観測者に通知する（[SubscriptionRepository]
+     *   javadoc 参照）。本メソッドは refresh 完了後に最新の load state を 1 回読み取り、
+     *   [SubscriptionLoadState.Error] であれば [RegisterFeedEvent.SubscriptionRefreshFailed]
+     *   を emit する。
+     * - Req 3.3 の drawer 内エラー表示は drawer 側が独立に load state を購読しているため、
+     *   本イベントの有無に関わらず自動で反映される（本メソッドは「シェル全体での非
+     *   ブロッキング通知」のみを担う）。
+     * - Req 3.4 / 3.5: 失敗後の復帰経路（ユーザーが drawer を開き直して再試行 / 再描画）は
+     *   既存の [SubscriptionRepository] の挙動でカバーされるため、本メソッドではリトライ
+     *   しない（1 回呼び切り）。
+     */
+    private suspend fun triggerSubscriptionRefresh() {
+        subscriptionRepository.refresh()
+        val state = subscriptionRepository.observeLoadState().first()
+        if (state is SubscriptionLoadState.Error) {
+            _events.emit(RegisterFeedEvent.SubscriptionRefreshFailed)
         }
     }
 

@@ -39,7 +39,7 @@ sealed interface RegisterFeedUiState {
 }
 
 /**
- * フィード登録シートの one-shot 通知イベント（Issue #44）。
+ * フィード登録シートの one-shot 通知イベント（Issue #44 / Issue #45）。
  *
  * `RegisterFeedViewModel.events` SharedFlow 経由で UI 側へ流す（replay = 0）。
  */
@@ -49,4 +49,17 @@ sealed interface RegisterFeedEvent {
      * Req 4.1 / 4.2: 登録成功（UI 側でシートを閉じ、トーストを表示する）。
      */
     data object RegistrationSucceeded : RegisterFeedEvent
+
+    /**
+     * Issue #45 Req 3.1 / 3.2 / 3.3: 登録自体は成功したが、その直後に走らせた
+     * 購読一覧再取得（Subscription Repository の `refresh()` 経由）が失敗したことを
+     * AppShell へ通知する one-shot イベント。
+     *
+     * UI 側は本イベントを受領しても登録成功トースト・シートクローズは抑止しない
+     * （Req 3.1）。またモーダルダイアログや全画面エラーを出さず、非ブロッキングな
+     * snackbar 等で軽量に提示する（Req 3.2）。drawer のフィードセクションに表示
+     * されるエラー UI（#39 Requirement 2 経路）は本イベントとは独立に
+     * `SubscriptionRepository.observeLoadState()` 経由で駆動される。
+     */
+    data object SubscriptionRefreshFailed : RegisterFeedEvent
 }

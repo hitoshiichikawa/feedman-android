@@ -113,6 +113,11 @@ private fun LoggedInShell() {
     val registerFeedViewModel: RegisterFeedViewModel = hiltViewModel()
     val shellSnackbarHostState = remember { SnackbarHostState() }
     val registerSucceededMessage = stringResource(R.string.register_feed_succeeded)
+    // Issue #45 Req 3.1〜3.3: 登録は成功したが直後の購読一覧再取得が失敗したことを
+    // 非ブロッキングに通知するための snackbar 文言。
+    val subscriptionRefreshFailedMessage = stringResource(
+        R.string.register_feed_subscription_refresh_failed,
+    )
 
     // Req 1.1〜1.5: タイトル/サブタイトルは純粋関数で解決し、現在ルートに追従させる
     val appBarStrings = AppBarStrings(
@@ -266,6 +271,18 @@ private fun LoggedInShell() {
                 onRegistrationSucceeded = {
                     coroutineScope.launch {
                         FeedmanSnackbar.show(shellSnackbarHostState, registerSucceededMessage)
+                    }
+                },
+                // Issue #45 Req 3.1〜3.3: 登録後の購読一覧再取得が失敗した場合、登録成功
+                // フィードバックを抑止せず追加で非ブロッキング snackbar を出す。drawer の
+                // フィードセクションは独自に observeLoadState を購読しているため、本
+                // snackbar は AppShell 全体の補助通知として機能する。
+                onSubscriptionRefreshFailed = {
+                    coroutineScope.launch {
+                        FeedmanSnackbar.show(
+                            shellSnackbarHostState,
+                            subscriptionRefreshFailedMessage,
+                        )
                     }
                 },
                 viewModel = registerFeedViewModel,

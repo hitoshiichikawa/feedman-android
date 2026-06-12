@@ -2,11 +2,17 @@ package com.feedman.android.feature.registerfeed
 
 import app.cash.turbine.test
 import com.feedman.android.core.data.FeedRegistrationRepository
+import com.feedman.android.core.data.SubscriptionLoadState
+import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.model.Subscription
 import com.feedman.android.core.network.FeedmanException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -55,17 +61,27 @@ class RegisterFeedViewModelTest {
         Dispatchers.resetMain()
     }
 
+    /**
+     * Issue #45: 既存テストの大半は登録成功直後の refresh 挙動を検証しないため、no-op
+     * Fake を使って 2 arg コンストラクタへ差し替えるためのヘルパー。
+     */
+    private fun newViewModel(
+        feedRegistrationRepository: FeedRegistrationRepository = StubRepository(),
+        subscriptionRepository: SubscriptionRepository = FakeSubscriptionRepository(),
+    ): RegisterFeedViewModel =
+        RegisterFeedViewModel(feedRegistrationRepository, subscriptionRepository)
+
     // ── open / close / updateUrl ─────────────────────────────
 
     @Test
     fun `初期状態は Hidden Req 1_1`() = runTest {
-        val vm = RegisterFeedViewModel(StubRepository())
+        val vm = newViewModel()
         assertEquals(RegisterFeedUiState.Hidden, vm.uiState.value)
     }
 
     @Test
     fun `open で Visible 状態にする 入力は空 Req 1_1 Req 1_3`() = runTest {
-        val vm = RegisterFeedViewModel(StubRepository())
+        val vm = newViewModel()
         vm.open()
         val s = vm.uiState.value as RegisterFeedUiState.Visible
         assertEquals("", s.url)
@@ -75,7 +91,7 @@ class RegisterFeedViewModelTest {
 
     @Test
     fun `close で Hidden に戻る Req 1_5`() = runTest {
-        val vm = RegisterFeedViewModel(StubRepository())
+        val vm = newViewModel()
         vm.open()
         vm.close()
         assertEquals(RegisterFeedUiState.Hidden, vm.uiState.value)
@@ -83,7 +99,7 @@ class RegisterFeedViewModelTest {
 
     @Test
     fun `updateUrl で入力値が保持され canSubmit が更新される Req 1_3`() = runTest {
-        val vm = RegisterFeedViewModel(StubRepository())
+        val vm = newViewModel()
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
         val s = vm.uiState.value as RegisterFeedUiState.Visible
@@ -93,7 +109,7 @@ class RegisterFeedViewModelTest {
 
     @Test
     fun `空白のみの入力では canSubmit が false Req 1_4`() = runTest {
-        val vm = RegisterFeedViewModel(StubRepository())
+        val vm = newViewModel()
         vm.open()
         vm.updateUrl("   ")
         val s = vm.uiState.value as RegisterFeedUiState.Visible
@@ -102,7 +118,7 @@ class RegisterFeedViewModelTest {
 
     @Test
     fun `updateUrl でクライアントエラーとサーバーエラーが両方クリアされる Req 2_3 Req 5_8`() = runTest {
-        val vm = RegisterFeedViewModel(StubRepository())
+        val vm = newViewModel()
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         // クライアントエラーを誘発
@@ -125,7 +141,7 @@ class RegisterFeedViewModelTest {
     @Test
     fun `submit 時に javascript スキーム はクライアントエラーで送信されない Req 2_1`() = runTest {
         val repo = StubRepository()
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("javascript:alert(1)")
@@ -141,7 +157,7 @@ class RegisterFeedViewModelTest {
     @Test
     fun `submit 時に http スキームは送信される Req 2_1`() = runTest {
         val repo = StubRepository()
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("http://example.com/feed.xml")
@@ -154,7 +170,7 @@ class RegisterFeedViewModelTest {
     @Test
     fun `submit 時に入力前後の空白は除去された値が送信される Req 2_4`() = runTest {
         val repo = StubRepository()
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("  https://example.com/feed.xml  ")
@@ -169,7 +185,7 @@ class RegisterFeedViewModelTest {
     @Test
     fun `submit で submitInProgress が true になり再 submit は no-op Req 3_2`() = runTest {
         val repo = StubRepository().apply { suspendRegister = true }
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
@@ -194,7 +210,7 @@ class RegisterFeedViewModelTest {
     @Test
     fun `submit 成功で RegistrationSucceeded が流れシートが閉じる Req 4_1`() = runTest {
         val repo = StubRepository()
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
@@ -218,7 +234,7 @@ class RegisterFeedViewModelTest {
                 httpStatus = 409,
             )
         }
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
@@ -241,7 +257,7 @@ class RegisterFeedViewModelTest {
                 retryAfterSeconds = 30,
             )
         }
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
@@ -262,7 +278,7 @@ class RegisterFeedViewModelTest {
                 retryAfterSeconds = null,
             )
         }
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
@@ -282,7 +298,7 @@ class RegisterFeedViewModelTest {
                 httpStatus = 400,
             )
         }
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/not-a-feed")
@@ -302,7 +318,7 @@ class RegisterFeedViewModelTest {
                 httpStatus = 500,
             )
         }
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
@@ -322,7 +338,7 @@ class RegisterFeedViewModelTest {
                 httpStatus = null,
             )
         }
-        val vm = RegisterFeedViewModel(repo)
+        val vm = newViewModel(feedRegistrationRepository = repo)
         vm.setErrorTexts(texts, clientInvalidUrl)
         vm.open()
         vm.updateUrl("https://example.com/feed.xml")
@@ -333,7 +349,182 @@ class RegisterFeedViewModelTest {
         assertEquals("[NETWORK]", s.serverErrorMessage)
     }
 
+    // ── Issue #45: 登録成功後の購読一覧再取得 ─────────
+
+    @Test
+    fun `submit 成功時に SubscriptionRepository_refresh が 1 回呼ばれる Req 1_1`() = runTest {
+        val repo = StubRepository()
+        val sub = FakeSubscriptionRepository()
+        val vm = newViewModel(feedRegistrationRepository = repo, subscriptionRepository = sub)
+        vm.setErrorTexts(texts, clientInvalidUrl)
+        vm.open()
+        vm.updateUrl("https://example.com/feed.xml")
+
+        vm.submit()
+
+        assertEquals(1, sub.refreshCalls)
+    }
+
+    @Test
+    fun `submit 成功時に RegistrationSucceeded を refresh より先に emit する Req 1_3 NFR 1_2`() = runTest {
+        val repo = StubRepository()
+        // refresh を未完了で suspend させ、success 通知が refresh 完了を待たないことを確認
+        val gate = CompletableDeferred<Unit>()
+        val sub = FakeSubscriptionRepository(refreshGate = gate)
+        val vm = newViewModel(feedRegistrationRepository = repo, subscriptionRepository = sub)
+        vm.setErrorTexts(texts, clientInvalidUrl)
+        vm.open()
+        vm.updateUrl("https://example.com/feed.xml")
+
+        vm.events.test {
+            vm.submit()
+            // refresh が suspend している状態でも RegistrationSucceeded は届く
+            assertEquals(RegisterFeedEvent.RegistrationSucceeded, awaitItem())
+            // refresh も起動済み（1 件 in-flight）
+            assertEquals(1, sub.refreshCalls)
+            // refresh を完了させて Success にする → 失敗イベントは emit されない
+            gate.complete(Unit)
+            cancelAndIgnoreRemainingEvents()
+        }
+        // refresh 後も success 状態ならシートは Hidden に閉じている（Req 4.1 維持）
+        assertEquals(RegisterFeedUiState.Hidden, vm.uiState.value)
+    }
+
+    @Test
+    fun `submit 失敗 4xx 時は SubscriptionRepository_refresh を呼ばない Req 4_1`() = runTest {
+        val repo = StubRepository().apply {
+            registerException = FeedmanException(
+                code = "FEED_ALREADY_REGISTERED",
+                errorMessage = "duplicate",
+                httpStatus = 409,
+            )
+        }
+        val sub = FakeSubscriptionRepository()
+        val vm = newViewModel(feedRegistrationRepository = repo, subscriptionRepository = sub)
+        vm.setErrorTexts(texts, clientInvalidUrl)
+        vm.open()
+        vm.updateUrl("https://example.com/feed.xml")
+
+        vm.submit()
+
+        assertEquals(0, sub.refreshCalls)
+    }
+
+    @Test
+    fun `submit 失敗 ネットワーク時は SubscriptionRepository_refresh を呼ばない Req 4_2`() = runTest {
+        val repo = StubRepository().apply {
+            registerException = FeedmanException(
+                code = FeedmanException.CODE_NETWORK_ERROR,
+                errorMessage = FeedmanException.FALLBACK_NETWORK_MESSAGE,
+                httpStatus = null,
+            )
+        }
+        val sub = FakeSubscriptionRepository()
+        val vm = newViewModel(feedRegistrationRepository = repo, subscriptionRepository = sub)
+        vm.setErrorTexts(texts, clientInvalidUrl)
+        vm.open()
+        vm.updateUrl("https://example.com/feed.xml")
+
+        vm.submit()
+
+        assertEquals(0, sub.refreshCalls)
+    }
+
+    @Test
+    fun `submit 応答待機中に close が呼ばれても refresh は呼ばれない Req 4_3`() = runTest {
+        // register を suspend したまま close すると、その後 register は完了しない（awaitCancellation）。
+        // 本テストはユーザーが応答待機中にシートを閉じた挙動を模す。
+        val repo = StubRepository().apply { suspendRegister = true }
+        val sub = FakeSubscriptionRepository()
+        val vm = newViewModel(feedRegistrationRepository = repo, subscriptionRepository = sub)
+        vm.setErrorTexts(texts, clientInvalidUrl)
+        vm.open()
+        vm.updateUrl("https://example.com/feed.xml")
+
+        vm.submit() // suspend で進まない
+        vm.close() // ユーザーがシートを閉じる
+
+        // refresh は呼ばれていない（登録成功イベントが出ていないため）
+        assertEquals(0, sub.refreshCalls)
+    }
+
+    @Test
+    fun `submit 成功後の refresh 失敗時に SubscriptionRefreshFailed が emit され シートは閉じたまま Req 3_1 Req 3_2 Req 3_3`() = runTest {
+        val repo = StubRepository()
+        val sub = FakeSubscriptionRepository(refreshResultState = SubscriptionLoadState.Error(
+            message = "GET /api/subscriptions 失敗",
+            code = "NETWORK_ERROR",
+        ))
+        val vm = newViewModel(feedRegistrationRepository = repo, subscriptionRepository = sub)
+        vm.setErrorTexts(texts, clientInvalidUrl)
+        vm.open()
+        vm.updateUrl("https://example.com/feed.xml")
+
+        vm.events.test {
+            vm.submit()
+            // Req 3.1: 登録成功フィードバックは抑止されない
+            assertEquals(RegisterFeedEvent.RegistrationSucceeded, awaitItem())
+            // Req 3.2 / 3.3: 非ブロッキングなエラーイベントとして SubscriptionRefreshFailed が流れる
+            assertEquals(RegisterFeedEvent.SubscriptionRefreshFailed, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        // Req 3.2: 状態は Hidden のまま（モーダル / 全画面エラーで戻されない）
+        assertEquals(RegisterFeedUiState.Hidden, vm.uiState.value)
+        assertEquals(1, sub.refreshCalls)
+    }
+
+    @Test
+    fun `submit 成功後の refresh 成功時には SubscriptionRefreshFailed は emit されない Req 1_3`() = runTest {
+        val repo = StubRepository()
+        val sub = FakeSubscriptionRepository(refreshResultState = SubscriptionLoadState.Success)
+        val vm = newViewModel(feedRegistrationRepository = repo, subscriptionRepository = sub)
+        vm.setErrorTexts(texts, clientInvalidUrl)
+        vm.open()
+        vm.updateUrl("https://example.com/feed.xml")
+
+        vm.events.test {
+            vm.submit()
+            assertEquals(RegisterFeedEvent.RegistrationSucceeded, awaitItem())
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(1, sub.refreshCalls)
+    }
+
     // ── ヘルパー ─────────────────────────────────────
+
+    /**
+     * Issue #45 用の [SubscriptionRepository] テストダブル。
+     *
+     * - [refresh] 呼び出し回数を [refreshCalls] で観測できる。
+     * - [refreshGate] が指定されていれば、refresh が当該 [CompletableDeferred] の完了まで
+     *   suspend するため、`RegistrationSucceeded` を refresh 完了より先に観測できる
+     *   （NFR 1.2 検証用）。
+     * - [refreshResultState] で refresh 完了後に [observeLoadState] が emit する状態を
+     *   切り替えられる。デフォルトは [SubscriptionLoadState.Success]（成功扱い）。
+     */
+    private class FakeSubscriptionRepository(
+        private val refreshGate: CompletableDeferred<Unit>? = null,
+        private val refreshResultState: SubscriptionLoadState = SubscriptionLoadState.Success,
+    ) : SubscriptionRepository {
+        var refreshCalls: Int = 0
+            private set
+
+        private val _loadState: MutableStateFlow<SubscriptionLoadState> =
+            MutableStateFlow(SubscriptionLoadState.Idle)
+
+        override fun observeSubscriptions(): Flow<List<Subscription>> =
+            MutableStateFlow(emptyList<Subscription>()).asStateFlow()
+
+        override fun observeLoadState(): Flow<SubscriptionLoadState> = _loadState.asStateFlow()
+
+        override suspend fun refresh() {
+            refreshCalls += 1
+            _loadState.value = SubscriptionLoadState.Loading
+            refreshGate?.await()
+            _loadState.value = refreshResultState
+        }
+    }
 
     private class StubRepository : FeedRegistrationRepository {
         var registerCalls: Int = 0
