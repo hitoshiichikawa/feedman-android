@@ -373,4 +373,134 @@ class SubscriptionRepositoryImplTest {
         // Assert
         assertEquals(null, notFound)
     }
+
+    // ===== Issue #42: 手動フェッチ（fetch） =====
+
+    @Test
+    fun `Issue42 Req 1_1 fetch で api subscriptions id fetch を POST する`() = runTest {
+        // Arrange: refresh 用 + fetch 用の 2 レスポンス
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(active))
+        val repo = newRepository()
+        repo.refresh()
+        server.takeRequest() // refresh 分の record を捨てる
+
+        // Act
+        repo.fetch("01HGY8K9ZQ4N7TXVY1F8M9R3SU")
+
+        // Assert
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals(
+            "/api/subscriptions/01HGY8K9ZQ4N7TXVY1F8M9R3SU/fetch",
+            recorded.requestUrl?.encodedPath,
+        )
+    }
+
+    @Test
+    fun `Issue42 Req 2_3 fetch 成功で観測中の Subscription が unread count 更新を反映する`() = runTest {
+        // Arrange: 1) refresh で unread_count=12 の active 状態をリストに載せる
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first().single()
+        assertEquals(12, before.unreadCount)
+
+        // 2) fetch レスポンスとして unread_count を増やした active を返す
+        val updatedJson = active.replace("\"unread_count\": 12", "\"unread_count\": 17")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(updatedJson))
+
+        // Act
+        val returned = repo.fetch(before.id)
+
+        // Assert: 戻り値 + 観測ストリーム双方が unread_count = 17 に切り替わる
+        assertEquals(17, returned.unreadCount)
+        val afterList = repo.observeSubscriptions().first()
+        assertEquals(1, afterList.size)
+        assertEquals(17, afterList[0].unreadCount)
+    }
+
+    @Test
+    fun `Issue42 Req 3_1 fetch がクールダウン応答時 FEED_COOLDOWN と retryAfterSeconds 付きで例外を投げる`() = runTest {
+        // Arrange
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first().single()
+
+        // クールダウン応答（SPEC §4.3）
+        val errorBody = """
+            {
+              "error": {
+                "code": "FEED_COOLDOWN",
+                "message": "クールダウン中です。",
+                "category": "rate_limit",
+                "action": "wait_and_retry",
+                "details": { "retry_after_seconds": 30 }
+              }
+            }
+        """.trimIndent()
+        server.enqueue(
+            MockResponse().setResponseCode(429)
+                .setHeader("Content-Type", "application/json")
+                .setBody(errorBody),
+        )
+
+        // Act / Assert
+        var thrown: Throwable? = null
+        try {
+            repo.fetch(before.id)
+        } catch (e: Throwable) {
+            thrown = e
+        }
+        assertTrue("expected FeedmanException, got $thrown", thrown is FeedmanException)
+        val fe = thrown as FeedmanException
+        assertEquals("FEED_COOLDOWN", fe.code)
+        assertEquals(30, fe.retryAfterSeconds)
+        // 購読リストは変わらない（active のまま、unread_count 等が手元のキャッシュ値を維持）
+        val after = repo.observeSubscriptions().first().single()
+        assertEquals(before.unreadCount, after.unreadCount)
+    }
+
+    @Test
+    fun `Issue42 Req 4_1 fetch その他のエラー時に例外を伝搬し購読リストを変えない`() = runTest {
+        // Arrange
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first().single()
+
+        // 503 で失敗
+        val errorBody = """
+            {
+              "error": {
+                "code": "UPSTREAM_ERROR",
+                "message": "上流サービスでエラーが発生しました。"
+              }
+            }
+        """.trimIndent()
+        server.enqueue(
+            MockResponse().setResponseCode(503)
+                .setHeader("Content-Type", "application/json")
+                .setBody(errorBody),
+        )
+
+        // Act / Assert
+        var thrown: Throwable? = null
+        try {
+            repo.fetch(before.id)
+        } catch (e: Throwable) {
+            thrown = e
+        }
+        assertTrue("expected FeedmanException, got $thrown", thrown is FeedmanException)
+        val fe = thrown as FeedmanException
+        assertEquals("UPSTREAM_ERROR", fe.code)
+        // 購読リストは変わらない
+        val after = repo.observeSubscriptions().first().single()
+        assertEquals(before.unreadCount, after.unreadCount)
+    }
 }
