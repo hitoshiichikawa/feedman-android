@@ -128,6 +128,10 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.retrofit.kotlinx.serialization.converter)
 
+    // Paging 3 (Issue #18: カーソルページング基盤)
+    implementation(libs.androidx.paging.runtime)
+    implementation(libs.androidx.paging.common)
+
     // Test
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -139,4 +143,7 @@ dependencies {
     // 単体テスト（JVM）向けには tmp dir + `PreferenceDataStoreFactory` を使う
     // `datastore-preferences-core` を併用する（Issue #25 NFR 3.2）。
     testImplementation(libs.androidx.datastore.preferences.core)
+    // Paging testing utilities（Issue #18）: TestPager で refresh / append / retry を
+    // 結合確認するために JVM テスト側にだけ追加する。
+    testImplementation(libs.androidx.paging.testing)
 }
