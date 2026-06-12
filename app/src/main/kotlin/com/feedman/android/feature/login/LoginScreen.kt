@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -180,13 +181,15 @@ private fun LoginScreenBody(
 
         // 進行中表示（Req 2.5 / 3.5）
         val busy = uiState is LoginUiState.LaunchingCustomTabs || uiState is LoginUiState.Exchanging
+        // Issue #53 Req 3.4: 固定 52dp ではフォントスケール 200% でテキストが縦方向に
+        // 切り詰められうるため、最小値のみを与え高さはコンテンツに追従させる。
         Button(
             onClick = onGoogleLoginClick,
             enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 320.dp)
-                .height(52.dp),
+                .heightIn(min = 52.dp),
             shape = RoundedCornerShape(14.dp),
         ) {
             if (busy) {
