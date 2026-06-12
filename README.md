@@ -60,7 +60,7 @@ JVM 単体テストのみ実行する場合:
 
 | Gradle プロパティ | BuildConfig フィールド | 未指定時の既定値 | 用途 |
 |---|---|---|---|
-| `feedman.baseUrl` | `BuildConfig.BASE_URL` | `https://dev.feedman.example.com` | 開発サーバー / 本番サーバーの切替（実 API 統合は後続 Issue） |
+| `feedman.baseUrl` | `BuildConfig.BASE_URL` | `https://stg-feed.markte-river.net` | 開発サーバー / 本番サーバーの切替（実 API 統合は後続 Issue） |
 | `feedman.mockMode` | `BuildConfig.MOCK_MODE` | `false` | `true` でログイン placeholder をスキップしてドロワー + モックタイムラインを起動 |
 
 例: モックモードでビルドする
@@ -72,7 +72,7 @@ JVM 単体テストのみ実行する場合:
 例: baseUrl を上書きしてビルドする
 
 ```bash
-./gradlew assembleDebug -Pfeedman.baseUrl=https://staging.example.com
+./gradlew assembleDebug -Pfeedman.baseUrl=https://stg-feed.markte-river.net
 ```
 
 複数プロパティを永続的に設定するには `gradle.properties` に追記する（リポジトリ直下に
@@ -80,7 +80,7 @@ JVM 単体テストのみ実行する場合:
 
 ```properties
 feedman.mockMode=true
-feedman.baseUrl=https://dev.feedman.example.com
+feedman.baseUrl=https://stg-feed.markte-river.net
 ```
 
 ### 機密情報の取り扱い

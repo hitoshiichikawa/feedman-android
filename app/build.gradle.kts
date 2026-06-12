@@ -9,12 +9,11 @@ plugins {
 
 /**
  * Default base URL when `feedman.baseUrl` Gradle property is not provided (Req 5.3).
- * The development server is not yet provisioned for this skeleton; we use a public
- * example.com URL so that BuildConfig.BASE_URL stays a non-secret, parseable URL.
- * Override at build time: `./gradlew build -Pfeedman.baseUrl=https://dev.feedman.example.com`
+ * Points to the staging Feedman server. Override at build time:
+ * `./gradlew build -Pfeedman.baseUrl=https://example.invalid`
  */
 val defaultBaseUrl: String = (findProperty("feedman.baseUrl") as String?)
-    ?: "https://dev.feedman.example.com"
+    ?: "https://stg-feed.markte-river.net"
 
 /**
  * Default mockMode when `feedman.mockMode` Gradle property is not provided (Req 5.4).
