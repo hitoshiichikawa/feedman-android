@@ -231,11 +231,13 @@ data class PatchFeedRequest(
 )
 
 /**
- * `PUT /api/items/{id}/state` のリクエストボディ（SPEC §4.2 / Req 1.4）。
+ * `PUT /api/items/{id}/state` のリクエストボディ（SPEC §4.2 / Issue #17 Req 1.4 / Issue #35 Req 2.2 / 2.3）。
  *
  * `is_read` / `is_starred` は nullable で、null のフィールドは更新しない契約。
- * kotlinx.serialization は null をそのままシリアライズする（`explicitNulls = true` 既定）ため、
- * フィールド省略を意図したい呼び出しでは null を明示的に渡す。
+ * [ApiClientFactory.json] は `explicitNulls = false` を採用しているため、`null` を保持した
+ * フィールドはエンコード時に **キーごと省略** され、サーバーは送信されたフィールドだけを
+ * partial update として解釈できる。両方とも null の組み合わせは呼び出し元（Repository 層）で
+ * バリデーションする責務（Issue #35 Req 2.5）。
  */
 @Serializable
 data class ItemStateUpdateRequest(
