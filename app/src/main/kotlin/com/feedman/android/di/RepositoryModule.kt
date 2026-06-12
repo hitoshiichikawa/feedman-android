@@ -2,6 +2,8 @@ package com.feedman.android.di
 
 import com.feedman.android.core.data.CrossFeedRepository
 import com.feedman.android.core.data.CrossFeedRepositoryImpl
+import com.feedman.android.core.data.ItemDetailRepository
+import com.feedman.android.core.data.ItemDetailRepositoryImpl
 import com.feedman.android.core.data.ItemRepository
 import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.data.fake.FakeItemRepository
@@ -45,4 +47,14 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindCrossFeedRepository(impl: CrossFeedRepositoryImpl): CrossFeedRepository
+
+    /**
+     * 記事詳細・状態更新リポジトリ（Issue #35 Req 1 / 2 / 3）。
+     *
+     * 記事詳細シート（#36）と楽観的更新同期（#38）が共有するデータ層。実 API 用の単一実装
+     * のみ提供し、Fake 系は不要（v1 スコープ外）。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindItemDetailRepository(impl: ItemDetailRepositoryImpl): ItemDetailRepository
 }
