@@ -49,7 +49,7 @@ const val REGISTER_FEED_SHEET_TEST_TAG: String =
     "feature.registerfeed.RegisterFeedSheet"
 
 /**
- * フィード登録シート（Issue #44 / SPEC §5.5）。
+ * フィード登録シート（Issue #44 / SPEC §5.5 / Issue #45）。
  *
  * `design/mobile/fm-sheets.jsx` の `FMRegisterSheet` を Compose で再現する。
  * 共通 [FeedmanSheet] でラップし、内側に以下を並べる:
@@ -59,10 +59,14 @@ const val REGISTER_FEED_SHEET_TEST_TAG: String =
  * 3. 登録ボタン（ローディング状態あり）
  *
  * @param onRegistrationSucceeded 登録成功時のコールバック（UI 側でトースト表示）
+ * @param onSubscriptionRefreshFailed Issue #45 Req 3.1〜3.3: 登録は成功したものの直後の
+ *   購読一覧再取得が失敗したことを通知するコールバック。AppShell 側で非ブロッキングな
+ *   snackbar を表示する。シートのクローズ・登録成功トーストは抑止しない。
  */
 @Composable
 fun RegisterFeedSheet(
     onRegistrationSucceeded: () -> Unit,
+    onSubscriptionRefreshFailed: () -> Unit = {},
     viewModel: RegisterFeedViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -99,11 +103,13 @@ fun RegisterFeedSheet(
         viewModel.setErrorTexts(texts, clientInvalidUrl)
     }
 
-    // events: 登録成功 → 親コンポーネント（AppShell）にトースト表示を委譲
+    // events: 登録成功 → 親コンポーネント（AppShell）にトースト表示を委譲。
+    // Issue #45: 購読一覧再取得失敗イベントも AppShell へ委譲して snackbar を出す。
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
                 RegisterFeedEvent.RegistrationSucceeded -> onRegistrationSucceeded()
+                RegisterFeedEvent.SubscriptionRefreshFailed -> onSubscriptionRefreshFailed()
             }
         }
     }
