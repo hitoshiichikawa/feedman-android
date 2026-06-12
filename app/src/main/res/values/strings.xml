@@ -35,6 +35,28 @@
     <!-- Req 2.1: 上部アプリバー左端のメニューボタン contentDescription -->
     <string name="appbar_open_drawer">メニューを開く</string>
 
+    <!-- Issue #31: トップバー導線とドロワー導線の文言 / a11y ラベル -->
+    <!-- Req 1.1: 「すべての新着」タイトル（timeline ルート / 既存 timeline_title を流用しないシェル参照側） -->
+    <string name="appbar_title_starred">お気に入り</string>
+    <!-- Req 1.5: 検索画面のタイトル（placeholder 配線時の表示用） -->
+    <string name="appbar_title_search">検索</string>
+    <!-- Req 1.3 異常系: フィード名が未解決時のフォールバックタイトル -->
+    <string name="appbar_title_feed_fallback">フィード</string>
+    <!-- Req 2.1, 2.4: 検索アイコン a11y -->
+    <string name="appbar_action_search">検索</string>
+    <!-- Req 3.6: テーマ切替アイコン a11y -->
+    <string name="appbar_action_toggle_theme">テーマ切替</string>
+    <!-- Req 4.5: ドロワーヘッダのユーザー領域 a11y -->
+    <string name="drawer_action_account">アカウント</string>
+    <!-- Req 5.5: ドロワーフィードセクションの + ボタン a11y -->
+    <string name="drawer_action_add_feed">フィードを登録</string>
+    <!-- Req 4.4: アカウント placeholder シートの pane title / 仮文言 -->
+    <string name="sheet_account_placeholder_title">アカウント</string>
+    <string name="sheet_account_placeholder_body">アカウントシートは Issue #49 で実装します。</string>
+    <!-- Req 5.4: フィード登録 placeholder シートの pane title / 仮文言 -->
+    <string name="sheet_feed_registration_placeholder_title">フィードを登録</string>
+    <string name="sheet_feed_registration_placeholder_body">フィード登録シートは Issue #44 で実装します。</string>
+
     <!-- Issue #27: 共有メタ部品のアクセシビリティラベルと表記 -->
     <!-- Req 1.5: is_starred=true 時のスタートグル contentDescription -->
     <string name="article_meta_star_remove">スターを解除</string>

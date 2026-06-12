@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -44,14 +45,14 @@ import com.feedman.android.core.designsystem.feedmanDimens
 import com.feedman.android.core.ui.Favicon
 
 /**
- * App Shell のナビゲーションドロワー本体（Issue #29 / Issue #30）。
+ * App Shell のナビゲーションドロワー本体（Issue #29 / Issue #30 / Issue #31）。
  *
  * `design/mobile/fm-screens.jsx` の `FMDrawer` / `FMFeedListBody` を骨格として、以下の
  * セクションを並べる:
  *
- * 1. ヘッダ（アプリ名 + ユーザー placeholder）
+ * 1. ヘッダ（アプリ名 + ユーザー領域。Issue #31: ユーザー領域はタップ可能でアカウントシートを起動）
  * 2. メイン項目（[drawerMainItems]）— 「すべての新着」「お気に入り」（#29）
- * 3. **フィード一覧**（#30）— [DrawerViewModel] から StateFlow で取得したリストを描画
+ * 3. **フィード一覧**（#30 / #31）— セクション見出し横に + ボタン（Issue #31 Req 5.1）
  * 4. フッタ（[drawerFooterItems]）— アカウント / テーマ切替
  *
  * フィード行（[DrawerFeedRowItem]）の構成（Req 1.2 / NFR 1.1）:
@@ -64,6 +65,8 @@ import com.feedman.android.core.ui.Favicon
  *   `feed/{feedId}` への遷移とドロワークローズを実行する（#30 Req 3.1, 3.2, 3.3）。
  * @param onSelectFeedSettings 設定アイコンがタップされたときのコールバック。本 Issue では
  *   no-op として配線のみを行い、#43 でシート本体を実装する（#30 Req 4.1, 4.2, 4.3）。
+ * @param onAccountAreaTap ヘッダのユーザー領域タップ時のコールバック（#31 Req 4.2, 4.3）。
+ * @param onAddFeedTap フィードセクション + ボタンタップ時のコールバック（#31 Req 5.2, 5.3）。
  */
 @Composable
 fun DrawerContent(
@@ -72,6 +75,8 @@ fun DrawerContent(
     onSelectFooterItem: (DrawerFooterItem) -> Unit,
     onSelectFeed: (DrawerFeedRow) -> Unit,
     onSelectFeedSettings: (DrawerFeedRow) -> Unit,
+    onAccountAreaTap: () -> Unit,
+    onAddFeedTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: DrawerViewModel = hiltViewModel()
@@ -83,6 +88,8 @@ fun DrawerContent(
         onSelectFooterItem = onSelectFooterItem,
         onSelectFeed = onSelectFeed,
         onSelectFeedSettings = onSelectFeedSettings,
+        onAccountAreaTap = onAccountAreaTap,
+        onAddFeedTap = onAddFeedTap,
         modifier = modifier,
     )
 }
@@ -98,11 +105,13 @@ internal fun DrawerContentStateless(
     onSelectFooterItem: (DrawerFooterItem) -> Unit,
     onSelectFeed: (DrawerFeedRow) -> Unit,
     onSelectFeedSettings: (DrawerFeedRow) -> Unit,
+    onAccountAreaTap: () -> Unit,
+    onAddFeedTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ModalDrawerSheet(modifier = modifier.fillMaxHeight()) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            DrawerHeader()
+            DrawerHeader(onAccountAreaTap = onAccountAreaTap)
             HorizontalDivider()
 
             // メイン項目（#29 Req 2.4, 2.5）
@@ -115,12 +124,13 @@ internal fun DrawerContentStateless(
                 )
             }
 
-            // フィード一覧（#30 Req 1.1, 1.2, 1.3, 1.5）
+            // フィード一覧（#30 Req 1.1, 1.2, 1.3, 1.5 / #31 Req 5.1）
             Spacer(modifier = Modifier.padding(top = 8.dp))
             DrawerFeedsSection(
                 rows = rows,
                 onSelectFeed = onSelectFeed,
                 onSelectFeedSettings = onSelectFeedSettings,
+                onAddFeedTap = onAddFeedTap,
             )
 
             Spacer(modifier = Modifier.padding(top = 8.dp))
@@ -139,8 +149,17 @@ internal fun DrawerContentStateless(
     }
 }
 
+/**
+ * ドロワーヘッダ（Issue #29 / Issue #31 Req 4.1, 4.2, 4.5）。
+ *
+ * - アプリ名 + ユーザー領域（アイコン + メールアドレス placeholder）を表示する
+ * - ユーザー領域は単一の `Row` として `clickable` し、タップで [onAccountAreaTap] を発火する
+ *   （Req 4.2: アカウントシート起動 + Req 4.3: ドロワー閉。後者は呼び出し元責務）
+ * - 全体タップ領域は最小 48dp 高を `defaultMinSize` で確保する（NFR 3.1: 48dp 四方）
+ * - スクリーンリーダー向け a11y ラベルは「アカウント」（Req 4.5）
+ */
 @Composable
-private fun DrawerHeader() {
+private fun DrawerHeader(onAccountAreaTap: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -151,35 +170,69 @@ private fun DrawerHeader() {
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleMedium,
         )
-        Text(
-            text = stringResource(R.string.drawer_account_placeholder_email),
-            style = MaterialTheme.typography.bodySmall,
-        )
+        // Req 4.1: タップ可能なユーザー領域。
+        val accountDescription = stringResource(R.string.drawer_action_account)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onAccountAreaTap)
+                .defaultMinSize(minHeight = 48.dp)
+                .padding(vertical = 4.dp)
+                .semantics { contentDescription = accountDescription },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.drawer_account_placeholder_email),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
 /**
- * ドロワーのフィード一覧セクション（Issue #30 / Req 1.1, 1.3, 1.5）。
+ * ドロワーのフィード一覧セクション（Issue #30 / Req 1.1, 1.3, 1.5 / Issue #31 Req 5.1）。
  *
  * - リポジトリが返した順序のまま行を並べる（Req 1.5）
  * - rows が空のときはフィード行を 1 件も描画しない（Req 1.3 / セクション見出しは残す）
+ * - セクション見出し（「フィード」）の横に + ボタンを配置し、フィード登録シートを起動する
+ *   入口とする（Issue #31 Req 5.1, 5.5）
  */
 @Composable
 private fun DrawerFeedsSection(
     rows: List<DrawerFeedRow>,
     onSelectFeed: (DrawerFeedRow) -> Unit,
     onSelectFeedSettings: (DrawerFeedRow) -> Unit,
+    onAddFeedTap: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp),
     ) {
-        Text(
-            text = stringResource(R.string.drawer_section_feeds),
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(start = 8.dp, top = 6.dp, bottom = 6.dp),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.drawer_section_feeds),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.weight(1f),
+            )
+            // Issue #31 Req 5.1, 5.5 / NFR 3.1: 48dp タッチターゲット確保
+            IconButton(
+                onClick = onAddFeedTap,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = stringResource(R.string.drawer_action_add_feed),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
         rows.forEach { row ->
             DrawerFeedRowItem(
                 row = row,
