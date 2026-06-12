@@ -26,6 +26,11 @@ androidx-security-crypto = "1.0.0"
 # テーマモード永続化で使用。androidx.datastore:datastore-preferences は単独で artifact
 # 化されており、Proto DataStore など他系統への追加依存は持たない。
 androidx-datastore = "1.1.1"
+# androidx-browser: 1.8.0 が GA stable（2024-04 リリース）。Issue #37 で記事元 URL を
+# Chrome Custom Tabs 経由で開くために使用。1.9.x 系統は 2026-06 時点で alpha のみ。
+# CustomTabsIntent / CustomTabsClient 等のコア API のみ利用し、CCT セッション warmup や
+# Trusted Web Activity は使用しない（requirements.md "Out of Scope"）。
+androidx-browser = "1.8.0"
 
 # Compose
 compose-bom = "2024.10.01"
@@ -65,6 +70,7 @@ androidx-navigation-compose = { module = "androidx.navigation:navigation-compose
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "androidx-security-crypto" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "androidx-datastore" }
 androidx-datastore-preferences-core = { module = "androidx.datastore:datastore-preferences-core", version.ref = "androidx-datastore" }
+androidx-browser = { module = "androidx.browser:browser", version.ref = "androidx-browser" }
 
 # Compose BOM-managed
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
