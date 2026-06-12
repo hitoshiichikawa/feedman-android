@@ -3,6 +3,7 @@ package com.feedman.android.feature.login
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.feedman.android.core.auth.AuthCallbackDispatcher
 import com.feedman.android.core.auth.AuthCallbackError
 import com.feedman.android.core.auth.AuthCallbackParser
 import com.feedman.android.core.auth.AuthCallbackResult
@@ -65,7 +66,19 @@ class LoginViewModel @Inject constructor(
     private val pkceGenerator: PkceGenerator,
     private val authRepository: AuthRepository,
     private val appConfig: AppConfig,
+    authCallbackDispatcher: AuthCallbackDispatcher,
 ) : ViewModel() {
+
+    init {
+        // MainActivity が onNewIntent / 起動時 intent で配信したディープリンク URI を購読し、
+        // [onDeepLink] に転送する。replay = 1 のため、ViewModel が後から起動された場合でも
+        // 最新の 1 件は受領できる（プロセス cold start で deep link 起動された場合に必要）。
+        viewModelScope.launch {
+            authCallbackDispatcher.intents.collect { uri ->
+                onDeepLink(uri)
+            }
+        }
+    }
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
 

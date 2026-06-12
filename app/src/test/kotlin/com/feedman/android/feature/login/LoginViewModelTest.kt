@@ -2,6 +2,7 @@ package com.feedman.android.feature.login
 
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
+import com.feedman.android.core.auth.AuthCallbackDispatcher
 import com.feedman.android.core.auth.AuthRepository
 import com.feedman.android.core.auth.CurrentUserResult
 import com.feedman.android.core.auth.ExchangeResult
@@ -61,12 +62,16 @@ class LoginViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(handle: SavedStateHandle = SavedStateHandle()): LoginViewModel =
+    private fun viewModel(
+        handle: SavedStateHandle = SavedStateHandle(),
+        dispatcher: AuthCallbackDispatcher = AuthCallbackDispatcher(),
+    ): LoginViewModel =
         LoginViewModel(
             savedStateHandle = handle,
             pkceGenerator = fakePkce,
             authRepository = fakeRepo,
             appConfig = appConfig,
+            authCallbackDispatcher = dispatcher,
         )
 
     // ── Req 2: 押下開始 ──────────────────────────────────────────────
@@ -326,6 +331,25 @@ class LoginViewModelTest {
 
         // Assert
         assertEquals(0, fakeRepo.exchangeCalls.size)
+    }
+
+    @Test
+    fun `Req 3_1 AuthCallbackDispatcher emit triggers exchange via onDeepLink`() = runTest {
+        // Arrange
+        val handle = SavedStateHandle()
+        val dispatcher = AuthCallbackDispatcher()
+        fakePkce.next = PkcePair(codeVerifier = "verifier-from-dispatcher", codeChallenge = "C")
+        val vm = viewModel(handle = handle, dispatcher = dispatcher)
+        vm.startGoogleLogin()
+        fakeRepo.exchangeResult = ExchangeResult.Success
+
+        // Act
+        dispatcher.dispatch("feedman://auth/callback?auth_code=via-dispatcher")
+
+        // Assert
+        assertEquals(1, fakeRepo.exchangeCalls.size)
+        assertEquals("via-dispatcher", fakeRepo.exchangeCalls[0].first)
+        assertEquals("verifier-from-dispatcher", fakeRepo.exchangeCalls[0].second)
     }
 
     @Test
