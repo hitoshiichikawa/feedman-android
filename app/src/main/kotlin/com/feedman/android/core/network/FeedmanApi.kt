@@ -51,6 +51,26 @@ interface FeedmanApi {
     suspend fun logout()
 
     /**
+     * `auth_code` を本トークンに交換する（SERVER.md §1.3 POST `/api/auth/token`）。
+     * 認証不要エンドポイント（Bearer 不要 / Issue #21 Req 4.3）。
+     */
+    @POST("api/auth/token")
+    suspend fun exchangeAuthToken(@Body request: TokenExchangeRequest): TokenResponse
+
+    /**
+     * リフレッシュトークンでアクセストークンを再発行する（SERVER.md §1.3 POST `/api/auth/refresh`）。
+     * 認証不要エンドポイント（Bearer 不要 / Issue #21 Req 4.3）。
+     */
+    @POST("api/auth/refresh")
+    suspend fun refreshAuthToken(@Body request: RefreshTokenRequest): TokenResponse
+
+    /**
+     * リフレッシュトークンの失効要求（SERVER.md §1.3 POST `/api/auth/revoke`、Bearer 認証下）。
+     */
+    @POST("api/auth/revoke")
+    suspend fun revokeAuthToken(@Body request: RevokeTokenRequest)
+
+    /**
      * 退会（全購読・状態を削除）。SPEC §4.2 DELETE `/api/users/me`。
      */
     @DELETE("api/users/me")
@@ -243,4 +263,43 @@ data class PatchFeedRequest(
 data class ItemStateUpdateRequest(
     @SerialName("is_read") val isRead: Boolean? = null,
     @SerialName("is_starred") val isStarred: Boolean? = null,
+)
+
+/**
+ * `POST /api/auth/token` のリクエストボディ（SERVER.md §1.3 / Issue #21 Req 1.2）。
+ */
+@Serializable
+data class TokenExchangeRequest(
+    @SerialName("auth_code") val authCode: String,
+    @SerialName("code_verifier") val codeVerifier: String,
+)
+
+/**
+ * `POST /api/auth/refresh` のリクエストボディ（SERVER.md §1.3 / Issue #21 Req 2.1）。
+ */
+@Serializable
+data class RefreshTokenRequest(
+    @SerialName("refresh_token") val refreshToken: String,
+)
+
+/**
+ * `POST /api/auth/revoke` のリクエストボディ（SERVER.md §1.3 / Issue #21 Req 3.1）。
+ */
+@Serializable
+data class RevokeTokenRequest(
+    @SerialName("refresh_token") val refreshToken: String,
+)
+
+/**
+ * `POST /api/auth/token` / `POST /api/auth/refresh` の 200 レスポンス（SERVER.md §1.3）。
+ *
+ * - `expires_in`: アクセストークンの有効期間（秒）。
+ * - `token_type`: 常に `"Bearer"`。
+ */
+@Serializable
+data class TokenResponse(
+    @SerialName("access_token") val accessToken: String,
+    @SerialName("refresh_token") val refreshToken: String,
+    @SerialName("token_type") val tokenType: String,
+    @SerialName("expires_in") val expiresIn: Long,
 )
