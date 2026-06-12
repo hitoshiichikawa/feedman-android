@@ -12,6 +12,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.feedman.android.core.ui.OpenLinkResult
+import com.feedman.android.feature.feed.FeedScreen
 import com.feedman.android.feature.timeline.TimelineScreen
 
 /**
@@ -58,11 +59,13 @@ fun Navigation(
             arguments = listOf(
                 navArgument(AppRoute.Feed.ARG_FEED_ID) { type = NavType.StringType },
             ),
-        ) { backStackEntry ->
-            // Req 1.3: パスパラメータ feedId を遷移先に渡す。本 Issue では実画面が無いため
-            // placeholder で受領を可視化するだけに留める。実画面は #30 / 個別 Issue で接続。
-            val feedId = backStackEntry.arguments?.getString(AppRoute.Feed.ARG_FEED_ID).orEmpty()
-            FeedRoutePlaceholder(feedId = feedId)
+        ) {
+            // Issue #41: 実画面に置換。feedId は FeedScreenViewModel が SavedStateHandle
+            // 経由で受け取るため、ここで backStackEntry から再取得する必要はない。
+            FeedScreen(
+                onOpenItemDetail = { itemId -> onOpenItemDetail(itemId) },
+                onOpenExternalLink = onOpenExternalLink,
+            )
         }
         composable(AppRoute.Starred.id) {
             StarredRoutePlaceholder()
@@ -70,18 +73,6 @@ fun Navigation(
         composable(AppRoute.Search.id) {
             SearchRoutePlaceholder()
         }
-    }
-}
-
-/**
- * フィード別ルートの placeholder（実画面は別 Issue が担当）。
- *
- * `feedId` を画面に表示するのは Req 1.3 のパスパラメータ受領を視認できるようにするため。
- */
-@Composable
-private fun FeedRoutePlaceholder(feedId: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("feed: $feedId")
     }
 }
 
