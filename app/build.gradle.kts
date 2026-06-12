@@ -122,10 +122,18 @@ dependencies {
     // Serialization (Issue #15: API ドメインモデル decode で利用)
     implementation(libs.kotlinx.serialization.json)
 
+    // Networking (Issue #17: Retrofit + OkHttp + kotlinx.serialization converter)
+    implementation(libs.retrofit)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.retrofit.kotlinx.serialization.converter)
+
     // Test
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    // MockWebServer (Issue #17): Retrofit インターフェースをモックせず、実 HTTP 経路で検証する
+    testImplementation(libs.mockwebserver)
     // DataStore preferences-core を JVM テストから利用するため別途宣言。
     // 本体 implementation(`datastore-preferences`) は Android 用 artifact であり、
     // 単体テスト（JVM）向けには tmp dir + `PreferenceDataStoreFactory` を使う

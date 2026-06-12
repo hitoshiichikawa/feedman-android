@@ -46,6 +46,8 @@ paging = "3.3.4"
 # Test
 junit = "4.13.2"
 turbine = "1.1.0"
+# mockwebserver は okhttp と同じバージョン系列で揃える（同梱モジュール）。
+# Issue #17 で APIClient テストの実 HTTP 経路検証に使用。
 
 [libraries]
 # Hilt
@@ -95,6 +97,7 @@ androidx-paging-compose = { module = "androidx.paging:paging-compose", version.r
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
