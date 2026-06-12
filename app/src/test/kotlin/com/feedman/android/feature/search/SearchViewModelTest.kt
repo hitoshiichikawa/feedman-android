@@ -2,8 +2,12 @@ package com.feedman.android.feature.search
 
 import androidx.paging.PagingData
 import app.cash.turbine.test
+import com.feedman.android.core.data.ItemDetailRepository
+import com.feedman.android.core.data.ItemStateStore
 import com.feedman.android.core.data.SearchRepository
+import com.feedman.android.core.model.ItemDetail
 import com.feedman.android.core.model.ItemSearchHit
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -64,7 +68,7 @@ class SearchViewModelTest {
     fun `initial state has empty query and null submittedQuery`() = runTest {
         // Arrange
         val repo = RecordingSearchRepository()
-        val vm = SearchViewModel(repo)
+        val vm = SearchViewModel(repo, newStore())
 
         // Act / Assert
         assertEquals("", vm.queryInput.value)
@@ -78,7 +82,7 @@ class SearchViewModelTest {
     fun `onQueryChanged does not invoke repository`() = runTest {
         // Arrange
         val repo = RecordingSearchRepository()
-        val vm = SearchViewModel(repo)
+        val vm = SearchViewModel(repo, newStore())
 
         // Act
         vm.resultsPaging.test {
@@ -105,7 +109,7 @@ class SearchViewModelTest {
     fun `submit with whitespace only input does not invoke repository`() = runTest {
         // Arrange
         val repo = RecordingSearchRepository()
-        val vm = SearchViewModel(repo)
+        val vm = SearchViewModel(repo, newStore())
 
         // Act
         vm.resultsPaging.test {
@@ -128,7 +132,7 @@ class SearchViewModelTest {
     fun `submit trims and triggers repository with normalised query`() = runTest {
         // Arrange
         val repo = RecordingSearchRepository()
-        val vm = SearchViewModel(repo)
+        val vm = SearchViewModel(repo, newStore())
 
         // Act
         vm.resultsPaging.test {
@@ -154,7 +158,7 @@ class SearchViewModelTest {
     fun `submitting different query invokes repository again with new keyword`() = runTest {
         // Arrange
         val repo = RecordingSearchRepository()
-        val vm = SearchViewModel(repo)
+        val vm = SearchViewModel(repo, newStore())
 
         // Act
         vm.resultsPaging.test {
@@ -181,7 +185,7 @@ class SearchViewModelTest {
     fun `selectSuggestion puts text and triggers search`() = runTest {
         // Arrange
         val repo = RecordingSearchRepository()
-        val vm = SearchViewModel(repo)
+        val vm = SearchViewModel(repo, newStore())
 
         // Act
         vm.resultsPaging.test {
@@ -209,7 +213,7 @@ class SearchViewModelTest {
     fun `clear empties input and reverts to null submittedQuery`() = runTest {
         // Arrange
         val repo = RecordingSearchRepository()
-        val vm = SearchViewModel(repo)
+        val vm = SearchViewModel(repo, newStore())
 
         // Act: 1 回検索を確定してから clear
         vm.resultsPaging.test {
@@ -242,4 +246,24 @@ class SearchViewModelTest {
             SearchViewModel.SUGGESTIONS,
         )
     }
+
+    // ── helpers（Issue #48 で SearchViewModel が ItemStateStore を要求するようになった） ─
+
+    /**
+     * Issue #47 由来のテストは ItemStateStore に対する観点を持たないため、本ファイルでは
+     * 最低限の no-op store を生成する helper を 1 つだけ用意する。overlay 合成や failures の
+     * 観点は [SearchViewModelBridgeTest] が担当する。
+     */
+    private fun newStore(): ItemStateStore = ItemStateStore(
+        repository = object : ItemDetailRepository {
+            override suspend fun getItem(itemId: String): ItemDetail =
+                error("getItem must not be called in this test")
+            override suspend fun updateState(
+                itemId: String,
+                isRead: Boolean?,
+                isStarred: Boolean?,
+            ) { /* no-op */ }
+        },
+        scope = CoroutineScope(Dispatchers.Unconfined),
+    )
 }

@@ -19,13 +19,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -55,6 +56,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.map
 import com.feedman.android.R
+import com.feedman.android.core.data.ItemStateFailure
 import com.feedman.android.core.designsystem.feedmanColors
 import com.feedman.android.core.model.ItemSearchHit
 import com.feedman.android.core.ui.ArticleCard
@@ -63,8 +65,10 @@ import com.feedman.android.core.ui.EmptyState
 import com.feedman.android.core.ui.EndOfListFooter
 import com.feedman.android.core.ui.ErrorFooter
 import com.feedman.android.core.ui.ErrorFullScreen
+import com.feedman.android.core.ui.FeedmanSnackbar
 import com.feedman.android.core.ui.ListFooterState
 import com.feedman.android.core.ui.LoadingFullScreen
+import com.feedman.android.core.ui.OpenLinkResult
 import com.feedman.android.core.ui.resolveListFooterState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -72,7 +76,7 @@ import kotlinx.coroutines.flow.map
 import java.time.Clock
 
 /**
- * 横断検索画面（Issue #47 / SPEC §5.3 / `design/mobile/fm-screens.jsx` `FMSearchScreen`）。
+ * 横断検索画面（Issue #47 / Issue #48 / SPEC §5.3 / `design/mobile/fm-screens.jsx` `FMSearchScreen`）。
  *
  * - 上部はカスタム検索バー（戻る + 入力欄 + クリア）で構成し、トップアプリバーは非表示にせず
  *   そのまま下に重ねる（AppShell 側の Scaffold TopAppBar は維持。本 Issue では検索バーを
@@ -84,15 +88,30 @@ import java.time.Clock
  * - 0 件 / 失敗 / 追加ロード失敗時の表示を [com.feedman.android.core.ui.EmptyState] /
  *   [ErrorFullScreen] / [ErrorFooter] に委譲（Req 6.1 / 6.3 / 6.5）
  *
- * @param onOpenItemDetail 結果カードタップ時のコールバック（Issue #48 の領分。本 Issue では
- *        no-op を受け取り、AppShell からは ArticleDetailViewModel.open(itemId) と同形の
- *        コールバックが配線されるが、検索結果からの詳細遷移は v1 スコープ外（Req 7.3）
- *        として既定で no-op に倒してよい）
+ * ## Issue #48 — 検索→詳細ブリッジ
+ *
+ * - 結果カード本体タップ → 詳細シート起動（Req 1.1）。AppShell 直下の ArticleDetailViewModel に
+ *   `open(itemId)` を委譲することで、横断タイムライン・スター一覧と同一の表示・操作仕様で
+ *   開く（Req 1.2 / 1.4）。シートを閉じても本画面はスクロール位置・キーワード保持で残る
+ *   （NavHost の各ルートが backstack を保持しているため自動的に成立）
+ * - 結果カードの外部リンクアイコン → 共通 LinkOpener 経由で元記事を開く（Req 2.1）+
+ *   `markReadOnExternalOpen` で既読化トリガーを発行（Req 2.3）。失敗時は snackbar 通知 + 既読化
+ *   発行を抑止する（Req 2.4）
+ * - ItemSearchHit を ArticleCardModel に変換した上で ItemStateStore.overlays と combine
+ *   する経路は ViewModel が担保しているため、Composable 側はカードを描画するだけで
+ *   既読 / スター値が他画面の操作と即時同期する（Req 3.1〜3.6）
+ *
+ * @param onOpenItemDetail 結果カードタップ時のコールバック（Issue #48 Req 1.1 / 1.2）。
+ *        AppShell 直下の ArticleDetailViewModel.open(itemId) と接続される。Navigation 側で
+ *        no-op を渡す経路はもう存在しない。
+ * @param onOpenExternalLink 外部リンクアイコン押下時のコールバック（Issue #48 Req 2.1 / 2.4）。
+ *        AppShell 直下の共通 LinkOpener.open(...) と接続される。
  */
 @Composable
 fun SearchScreen(
     modifier: Modifier = Modifier,
     onOpenItemDetail: (itemId: String) -> Unit = {},
+    onOpenExternalLink: (url: String) -> OpenLinkResult = { OpenLinkResult.NoAppToHandle },
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val queryInput by viewModel.queryInput.collectAsStateWithLifecycle()
@@ -100,13 +119,71 @@ fun SearchScreen(
     val unknownLabel = stringResource(id = R.string.search_published_at_unknown)
     // PagingData の map は producer 側で動くため、stringResource を一度キャプチャして mapper に
     // 渡す。再コンポジションのたびに新しい Flow を作らないよう remember で固定する。
+    // Issue #48: cardPagingData（overlay 合成済み）を購読する。本 Flow は ArticleCardModel
+    // を流すが relativeTimeOverride が null で固定される（VM が Android リソースを読まない
+    // ため）。ここで stringResource を読み、UI 側で override を再付与する。
     val cardPagingFlow: Flow<PagingData<ArticleCardModel>> = remember(viewModel, unknownLabel) {
-        viewModel.resultsPaging.map { paging ->
-            paging.map { hit -> SearchCardModelMapper.toCardModel(hit, unknownLabel = unknownLabel) }
+        viewModel.cardPagingData.map { paging ->
+            paging.map { card ->
+                // ViewModel 側の mapper では UNKNOWN_PUBLISHED_AT="" を入れているため、
+                // 描画時に「日時不明」を表示したい場合は publishedAtIso が空のときに
+                // override を付ける。サーバー由来 published_at がある通常ケースは
+                // relativeTimeOverride = null のままで RelativeTimeFormatter が動く。
+                if (card.publishedAtIso.isEmpty() && card.relativeTimeOverride == null) {
+                    card.copy(relativeTimeOverride = unknownLabel)
+                } else {
+                    card
+                }
+            }
         }
     }
     val pagingItems = cardPagingFlow.collectAsLazyPagingItems()
     val clock = remember { Clock.systemDefaultZone() }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val markReadFailedMessage = stringResource(id = R.string.article_detail_mark_read_failed)
+    val starUpdateFailedMessage = stringResource(id = R.string.article_detail_star_update_failed)
+    val openLinkFailedMessage = stringResource(id = R.string.timeline_open_link_failed)
+
+    // Issue #48 Req 2.4: 外部リンク起動自体の失敗（InvalidUrl / NoAppToHandle）通知。
+    // 既読化失敗は ItemStateStore.failures（itemStateFailures）に統一されている。
+    LaunchedEffect(viewModel) {
+        viewModel.externalLinkEvents.collect { event ->
+            val message = when (event) {
+                SearchExternalLinkEvent.OpenLinkFailed -> openLinkFailedMessage
+            }
+            FeedmanSnackbar.show(snackbarHostState, message)
+        }
+    }
+
+    // Issue #48 Req 2.4 / 3.x: ItemStateStore の楽観的更新失敗を購読して snackbar 通知に変換する。
+    // 検索画面で生じたトグルだけでなく、シート側で生じたトグルもここで観測される（store は
+    // singleton で全画面共通のため）。タイムライン / スター画面と同じ流儀。
+    LaunchedEffect(viewModel) {
+        viewModel.itemStateFailures.collect { failure ->
+            val message = when (failure.kind) {
+                ItemStateFailure.Kind.Read -> markReadFailedMessage
+                ItemStateFailure.Kind.Star -> starUpdateFailedMessage
+            }
+            FeedmanSnackbar.show(snackbarHostState, message)
+        }
+    }
+
+    // Issue #48 Req 2.1 / 2.3 / 2.4: ArticleCard の onOpenLink 結線。LinkOpener の結果を
+    // ViewModel に伝え、成功時のみ既読化（store.markRead 経由）、失敗時は ViewModel 経由で
+    // 通知する。currentIsRead はカード描画時の値（overlay 合成済み）を渡し、冪等性を保証する。
+    val onExternalLinkClicked: (itemId: String, link: String, currentIsRead: Boolean) -> Unit =
+        { itemId, link, currentIsRead ->
+            when (onOpenExternalLink(link)) {
+                OpenLinkResult.OpenedWithCustomTabs,
+                OpenLinkResult.OpenedWithFallback -> {
+                    viewModel.markReadOnExternalOpen(itemId = itemId, currentIsRead = currentIsRead)
+                }
+                is OpenLinkResult.InvalidUrl,
+                OpenLinkResult.NoAppToHandle -> {
+                    viewModel.notifyExternalLinkFailed()
+                }
+            }
+        }
 
     SearchScreenContent(
         queryInput = queryInput,
@@ -114,11 +191,16 @@ fun SearchScreen(
         items = pagingItems,
         suggestions = SearchViewModel.SUGGESTIONS,
         clock = clock,
+        snackbarHostState = snackbarHostState,
         onQueryChanged = viewModel::onQueryChanged,
         onClear = viewModel::clear,
         onSubmit = viewModel::submit,
         onSelectSuggestion = viewModel::selectSuggestion,
         onOpenItemDetail = onOpenItemDetail,
+        onOpenExternalLink = onExternalLinkClicked,
+        onStarToggle = { itemId, newState, baseline ->
+            viewModel.toggleStar(itemId = itemId, newState = newState, baselineStarred = baseline)
+        },
         modifier = modifier,
     )
 }
@@ -131,36 +213,49 @@ internal fun SearchScreenContent(
     items: LazyPagingItems<ArticleCardModel>,
     suggestions: List<String>,
     clock: Clock,
+    snackbarHostState: SnackbarHostState,
     onQueryChanged: (String) -> Unit,
     onClear: () -> Unit,
     onSubmit: () -> Unit,
     onSelectSuggestion: (String) -> Unit,
     onOpenItemDetail: (itemId: String) -> Unit,
+    onOpenExternalLink: (itemId: String, link: String, currentIsRead: Boolean) -> Unit,
+    onStarToggle: (itemId: String, newState: Boolean, baselineStarred: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
-        SearchInputBar(
-            value = queryInput,
-            onValueChange = onQueryChanged,
-            onClear = onClear,
-            onSubmit = onSubmit,
-        )
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (submittedQuery == null) {
-                // Req 2.2: 空クエリ時はサジェストチップを表示
-                SuggestionChips(
-                    suggestions = suggestions,
-                    onSelect = onSelectSuggestion,
-                )
-            } else {
-                SearchResultsArea(
-                    submittedQuery = submittedQuery,
-                    items = items,
-                    clock = clock,
-                    onOpenItemDetail = onOpenItemDetail,
-                )
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            SearchInputBar(
+                value = queryInput,
+                onValueChange = onQueryChanged,
+                onClear = onClear,
+                onSubmit = onSubmit,
+            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (submittedQuery == null) {
+                    // Req 2.2: 空クエリ時はサジェストチップを表示
+                    SuggestionChips(
+                        suggestions = suggestions,
+                        onSelect = onSelectSuggestion,
+                    )
+                } else {
+                    SearchResultsArea(
+                        submittedQuery = submittedQuery,
+                        items = items,
+                        clock = clock,
+                        onOpenItemDetail = onOpenItemDetail,
+                        onOpenExternalLink = onOpenExternalLink,
+                        onStarToggle = onStarToggle,
+                    )
+                }
             }
         }
+        // Issue #48 Req 2.4 / 3.x: 外部リンク起動失敗・楽観的更新失敗の snackbar を
+        // 画面下部に重ねて配置する。タイムライン / スター画面と同等の流儀。
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
@@ -315,7 +410,7 @@ private fun SuggestionChips(
 }
 
 /**
- * 検索結果領域（Req 3.5 / 4.x / 5.x / 6.x）。
+ * 検索結果領域（Req 3.5 / 4.x / 5.x / 6.x / Issue #48 Req 1.x / 2.x / 3.x）。
  *
  * 進行中 → 初回エラー → 0 件 → 一覧 + フッタ（追加ロード中 / 追加エラー / 終端） の
  * 4 状態を排他的に描画する。横断タイムライン / スター画面と同じ流儀。
@@ -326,6 +421,8 @@ private fun SearchResultsArea(
     items: LazyPagingItems<ArticleCardModel>,
     clock: Clock,
     onOpenItemDetail: (itemId: String) -> Unit,
+    onOpenExternalLink: (itemId: String, link: String, currentIsRead: Boolean) -> Unit,
+    onStarToggle: (itemId: String, newState: Boolean, baselineStarred: Boolean) -> Unit,
 ) {
     val refresh = items.loadState.refresh
     val append = items.loadState.append
@@ -354,19 +451,24 @@ private fun SearchResultsArea(
                 append = append,
                 clock = clock,
                 onOpenItemDetail = onOpenItemDetail,
+                onOpenExternalLink = onOpenExternalLink,
+                onStarToggle = onStarToggle,
             )
         }
     }
 }
 
 /**
- * 結果リスト本体（Req 4.x / 5.x / 6.5）。
+ * 結果リスト本体（Req 4.x / 5.x / 6.5 / Issue #48 Req 1.x / 2.x / 3.x）。
  *
  * - 先頭に取得済み件数表示（Req 4.9）
  * - 各カードを共通 [ArticleCard] で描画
  * - フッタ状態は [resolveListFooterState] で排他決定（Loading / Error / EndOfList / None）
- * - スター操作は本 Issue では VM への配線を行わない（#48 / Issue #38 の領分との分離）
- *   ため、callback は no-op に倒している（既存 ArticleCard 仕様の onStarToggle は型定義上必須）
+ * - カードタップ → onOpenItemDetail（Issue #48 Req 1.1）
+ * - 外部リンクアイコン → onOpenExternalLink（Issue #48 Req 2.1 / 2.2: カード本体タップによる
+ *   詳細シート起動は ArticleCard 内部で外部リンクの click を消費するため自動抑止）
+ * - スタートグルは ItemStateStore 経由で同期する（Issue #48 Req 3.4 / requirements.md
+ *   Out of Scope のため UI 上の直接トグルは露出しないが、callback 自体は配線して将来拡張に備える）
  */
 @Composable
 private fun ResultsList(
@@ -374,6 +476,8 @@ private fun ResultsList(
     append: LoadState,
     clock: Clock,
     onOpenItemDetail: (itemId: String) -> Unit,
+    onOpenExternalLink: (itemId: String, link: String, currentIsRead: Boolean) -> Unit,
+    onStarToggle: (itemId: String, newState: Boolean, baselineStarred: Boolean) -> Unit,
 ) {
     val footerState = resolveListFooterState(
         isAppendLoading = append is LoadState.Loading,
@@ -402,12 +506,20 @@ private fun ResultsList(
             ArticleCard(
                 model = card,
                 onOpen = { id -> onOpenItemDetail(id) },
-                // Req 7.3 と Issue #48 切り出し境界の都合で、本 Issue ではスタートグルを
-                // 配線しない（タイムライン / スター画面のような ItemStateStore 経由配線は
-                // #48 で追加する想定）。
-                onStarToggle = { _, _ -> },
+                // Issue #48 Req 3.4: スタートグルは ItemStateStore 経由で他画面と同期する。
+                // 検索結果カード自体に専用トグル UI を露出させないのは requirements.md
+                // Out of Scope の方針だが、callback は配線しておく（ArticleCard 仕様上
+                // 必須引数のため）。baseline には現在のカード値（overlay 合成済み）を渡し
+                // ロールバック先を一意化する。
+                onStarToggle = { id, newState ->
+                    onStarToggle(id, newState, card.isStarred)
+                },
                 clock = clock,
-                onOpenLink = null,
+                // Issue #48 Req 2.1 / 2.2 / 2.3: 外部リンクアイコン → 共通 LinkOpener + 既読化。
+                // ArticleCard 内部で外部リンク click が onOpen を消費しないため、本体タップで
+                // 詳細シートが起動する流れと両立する（Req 2.2 の抑止）。currentIsRead を
+                // 渡すことで markRead の冪等性を保証する（Req 2.3）。
+                onOpenLink = { id -> onOpenExternalLink(id, card.link, card.isRead) },
             )
         }
         when (footerState) {
