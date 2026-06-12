@@ -68,13 +68,28 @@ class SubscriptionSettingsViewModel @Inject constructor(
     fun open(feedId: String) {
         // 既存の観測をキャンセル（別 feedId への切替に対応）
         observeJob?.cancel()
-        // いったん Hidden に戻して再構築する（前回の操作中フラグ等を引き継がない）
-        _uiState.value = SubscriptionSettingsUiState.Hidden
+        // Issue #52 Req 5.1: シートを開いた直後は Loading 状態にして、シート内に進行中であることを
+        // 示すローディング表示を出す。対象 Subscription が repository 内に既にキャッシュされている
+        // 場合は observeFeed の最初の emission で直ちに Visible に遷移する（観測者から見れば
+        // Loading が一瞬で Visible に置き換わるだけ）。
+        _uiState.value = SubscriptionSettingsUiState.Loading(feedId = feedId)
         observeJob = viewModelScope.launch {
             repository.observeFeed(feedId).collect { sub ->
                 if (sub == null) {
-                    // 対象が見つからない（解除完了などで消えた可能性）。Hidden に戻す。
-                    _uiState.value = SubscriptionSettingsUiState.Hidden
+                    // Issue #52 Req 5.2: 対象が見つからない場合の挙動。
+                    // - Visible だった場合: 解除完了などで途中で消えた → Hidden（シートを閉じる）
+                    // - Loading だった場合: 初回データ取得失敗（未存在）→ NotFound（再試行可能）
+                    // - NotFound だった場合: そのまま維持（連続して null を流された）
+                    _uiState.update { current ->
+                        when (current) {
+                            is SubscriptionSettingsUiState.Visible ->
+                                SubscriptionSettingsUiState.Hidden
+                            is SubscriptionSettingsUiState.Loading ->
+                                SubscriptionSettingsUiState.NotFound(feedId = current.feedId)
+                            is SubscriptionSettingsUiState.NotFound -> current
+                            SubscriptionSettingsUiState.Hidden -> current
+                        }
+                    }
                     return@collect
                 }
                 _uiState.update { current ->
@@ -84,6 +99,8 @@ class SubscriptionSettingsViewModel @Inject constructor(
                             // 一時状態は維持。例: selectedIntervalMinutes は引き続きユーザーの選択値）
                             current.copy(subscription = sub)
                         }
+                        is SubscriptionSettingsUiState.Loading,
+                        is SubscriptionSettingsUiState.NotFound,
                         SubscriptionSettingsUiState.Hidden -> SubscriptionSettingsUiState.Visible(
                             subscription = sub,
                             selectedIntervalMinutes =
@@ -95,6 +112,23 @@ class SubscriptionSettingsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Issue #52 Req 5.3: NotFound 状態からの再試行。最新の Subscription キャッシュを再観測する。
+     *
+     * 内部的には [open] と同じく `observeFeed(feedId)` をやり直す。リポジトリ側のキャッシュが
+     * 別経路（ドロワー refresh 等）で更新されていれば、新しい emission で Visible に遷移する。
+     */
+    fun retry() {
+        val current = _uiState.value
+        val feedId = when (current) {
+            is SubscriptionSettingsUiState.NotFound -> current.feedId
+            is SubscriptionSettingsUiState.Loading -> current.feedId
+            is SubscriptionSettingsUiState.Visible -> current.subscription.feedId
+            SubscriptionSettingsUiState.Hidden -> return
+        }
+        open(feedId)
     }
 
     /** Req 1.4: クローズ操作（ドラッグ下げ / スクリム / バック）。 */
@@ -118,6 +152,9 @@ class SubscriptionSettingsViewModel @Inject constructor(
                     // 選択変更したらエラーメッセージはクリア（ユーザーが次のアクションを試行）
                     errorMessage = null,
                 )
+                // Visible 以外（Hidden / Loading / NotFound）では操作対象が存在しないため no-op
+                is SubscriptionSettingsUiState.Loading,
+                is SubscriptionSettingsUiState.NotFound,
                 SubscriptionSettingsUiState.Hidden -> current
             }
         }

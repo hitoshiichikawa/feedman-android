@@ -100,7 +100,9 @@ fun SubscriptionSettingsSheet(
     }
 
     val state = uiState
-    if (state !is SubscriptionSettingsUiState.Visible) return
+    // Hidden のときはシートを描画しない。Loading / NotFound / Visible はいずれも
+    // シート内に描画する（Issue #52 Req 5.1 / 5.2: dead-end 回避）。
+    if (state is SubscriptionSettingsUiState.Hidden) return
 
     // Req 1.4: システム戻る操作で閉じる
     BackHandler(enabled = true) { viewModel.close() }
@@ -110,19 +112,122 @@ fun SubscriptionSettingsSheet(
         label = stringResource(R.string.subscription_settings_sheet_pane_title),
         modifier = Modifier.testTag(SUBSCRIPTION_SETTINGS_SHEET_TEST_TAG),
     ) {
-        SubscriptionSettingsSheetBody(
-            state = state,
-            snackbarHostState = snackbarHostState,
-            onClose = viewModel::close,
-            onSelectInterval = viewModel::selectInterval,
-            onSave = viewModel::save,
-            onResume = viewModel::resume,
-            onRequestUnsubscribe = viewModel::requestUnsubscribe,
-            onCancelUnsubscribe = viewModel::cancelUnsubscribe,
-            onConfirmUnsubscribe = viewModel::confirmUnsubscribe,
-        )
+        when (state) {
+            is SubscriptionSettingsUiState.Visible -> SubscriptionSettingsSheetBody(
+                state = state,
+                snackbarHostState = snackbarHostState,
+                onClose = viewModel::close,
+                onSelectInterval = viewModel::selectInterval,
+                onSave = viewModel::save,
+                onResume = viewModel::resume,
+                onRequestUnsubscribe = viewModel::requestUnsubscribe,
+                onCancelUnsubscribe = viewModel::cancelUnsubscribe,
+                onConfirmUnsubscribe = viewModel::confirmUnsubscribe,
+            )
+            is SubscriptionSettingsUiState.Loading -> SubscriptionSettingsLoadingBody(
+                onClose = viewModel::close,
+            )
+            is SubscriptionSettingsUiState.NotFound -> SubscriptionSettingsNotFoundBody(
+                onClose = viewModel::close,
+                onRetry = viewModel::retry,
+            )
+            SubscriptionSettingsUiState.Hidden -> Unit // 上の早期 return で除外済み
+        }
     }
 }
+
+/**
+ * Issue #52 Req 5.1: 初回データ取得中のローディング表示（シート内）。
+ *
+ * ヘッダ（タイトル + 閉じるアイコン）+ 中央に [LoadingFullScreen] 相当のインジケータを
+ * 描画する。閉じる以外の選択肢を残すための明示的な close 導線をヘッダに常時露出する。
+ */
+@Composable
+internal fun SubscriptionSettingsLoadingBody(
+    onClose: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SubscriptionSettingsPlaceholderHeader(onClose = onClose)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 200.dp)
+                .padding(40.dp)
+                .testTag(SUBSCRIPTION_SETTINGS_LOADING_TEST_TAG),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+/**
+ * Issue #52 Req 5.2 / 5.3: 初回データ取得が失敗（対象 Subscription が見つからない）した
+ * 状態のエラー表示。シート内にメッセージと「再試行」「閉じる」を露出し、dead-end を回避する。
+ */
+@Composable
+internal fun SubscriptionSettingsNotFoundBody(
+    onClose: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SubscriptionSettingsPlaceholderHeader(onClose = onClose)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 240.dp)
+                .testTag(SUBSCRIPTION_SETTINGS_NOT_FOUND_TEST_TAG),
+        ) {
+            com.feedman.android.core.ui.ErrorFullScreen(
+                onRetry = onRetry,
+                message = stringResource(R.string.subscription_settings_not_found),
+            )
+        }
+    }
+}
+
+/**
+ * Loading / NotFound 用のヘッダ。Subscription がまだ得られていないためタイトルは pane title
+ * を表示し、閉じるアイコンを常時露出する（Req 1.4 / Issue #52 Req 5.2 dead-end 回避）。
+ */
+@Composable
+private fun SubscriptionSettingsPlaceholderHeader(onClose: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.subscription_settings_sheet_pane_title),
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier.sizeIn(
+                minWidth = MaterialTheme.feedmanDimens.minTapTarget,
+                minHeight = MaterialTheme.feedmanDimens.minTapTarget,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = stringResource(R.string.subscription_settings_close_description),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+/** Issue #52 Req 5.1: Loading 状態の testTag。 */
+const val SUBSCRIPTION_SETTINGS_LOADING_TEST_TAG: String =
+    "feature.subscriptionsettings.SubscriptionSettingsSheet.loading"
+
+/** Issue #52 Req 5.2: NotFound 状態の testTag。 */
+const val SUBSCRIPTION_SETTINGS_NOT_FOUND_TEST_TAG: String =
+    "feature.subscriptionsettings.SubscriptionSettingsSheet.notFound"
 
 /**
  * ステートレスなシート本体（テスト / プレビュー流用しやすい）。
