@@ -92,6 +92,13 @@ coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 # Paging
 androidx-paging-runtime = { module = "androidx.paging:paging-runtime", version.ref = "paging" }
 androidx-paging-compose = { module = "androidx.paging:paging-compose", version.ref = "paging" }
+# paging-common は JVM 単体テストから PagingSource.load() を呼び出すために使用する
+# （paging-runtime は Android 依存のため JVM テストでは直接利用しない）。
+# Issue #18 で CursorPagingSource 基盤を実装するために追加。
+androidx-paging-common = { module = "androidx.paging:paging-common", version.ref = "paging" }
+# paging-testing は TestPager で refresh / append / retry を結合確認するために使用する。
+# Issue #18 の Req 3 / Req 4 を AC 単位で検証するために追加。
+androidx-paging-testing = { module = "androidx.paging:paging-testing", version.ref = "paging" }
 
 # Test
 junit = { module = "junit:junit", version.ref = "junit" }
