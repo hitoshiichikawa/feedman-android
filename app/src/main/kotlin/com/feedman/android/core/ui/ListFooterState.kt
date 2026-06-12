@@ -1,5 +1,7 @@
 package com.feedman.android.core.ui
 
+import androidx.paging.LoadState
+
 /**
  * 無限スクロール一覧のフッター描画状態（Issue #28 / Req 1.2, 3.4, 4.1, 4.2 / NFR 3.1）。
  *
@@ -47,4 +49,74 @@ fun resolveListFooterState(
     isAppendError -> ListFooterState.Error
     isEndOfPagination -> ListFooterState.EndOfList
     else -> ListFooterState.None
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Issue #34: タイムライン画面レベルの状態解決
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 横断タイムライン画面の「画面全体」状態（Issue #34 / Req 2.1, 2.4, 2.5, 3.1, 5.1, 6.1）。
+ *
+ * 画面全体（フルスクリーン領域を占有する）状態は次の 4 つを排他的に決定する:
+ *
+ * 1. [InitialLoading] — 初回ロード中で表示すべき記事が無い（Req 3.1）
+ * 2. [InitialError]   — 初回ロード失敗（Req 3.2）
+ * 3. [Empty]          — 取得 0 件かつ追加読込なし（Req 6.1）
+ * 4. [Content]        — 通常一覧表示
+ *
+ * NFR 2.1 を満たすため、画面全体状態と一覧表示状態は同時に提示しない。フッタ状態は
+ * [Content] のときのみ [resolveListFooterState] により付随的に決まる。
+ *
+ * pull-to-refresh の進行は本「画面全体状態」とは独立で、すでに `Content` のときは
+ * 上部 indicator として描画される（Req 1.2 / 1.3）。refresh エラーは一覧を破壊せず
+ * snackbar 通知（Req 5.1 / 5.2）に委ねるため、refresh が `Error` でも `itemCount > 0`
+ * なら [Content] のままとなる（Req 5.3）。
+ */
+sealed interface TimelineScreenState {
+    /** Req 3.1: 初回ロード中で表示すべき記事がまだ無い。 */
+    data object InitialLoading : TimelineScreenState
+
+    /** Req 3.2: 初回ロード失敗（再試行ボタンを画面全体で提示）。 */
+    data object InitialError : TimelineScreenState
+
+    /** Req 6.1: 初回ロードが完了し取得 0 件。空状態メッセージを提示する。 */
+    data object Empty : TimelineScreenState
+
+    /** Req 1.3 / 2.x / 4.x / 6.3: 通常の一覧表示。フッタ状態は別途解決する。 */
+    data object Content : TimelineScreenState
+}
+
+/**
+ * 画面全体状態の判定（Issue #34 / Req 3.1, 3.2, 6.1, 5.3 / NFR 2.1）。
+ *
+ * refresh の [LoadState] と現在保持されている記事件数・ページング終端フラグから、
+ * 排他的に [TimelineScreenState] を決定する純粋関数。Composable / Paging に依存せず
+ * JVM 単体テストで網羅検証できる。
+ *
+ * 判定優先順位:
+ * 1. すでに記事を表示している場合（`itemCount > 0`）は常に [TimelineScreenState.Content]
+ *    （Req 5.3 / 4.2: 既に読めている一覧を壊さない）。refresh が Error / Loading でも
+ *    本判定は Content を返し、上層が refresh indicator や snackbar の責務を負う
+ * 2. 記事 0 件 + refresh が [LoadState.Loading] → [InitialLoading]（Req 3.1）
+ * 3. 記事 0 件 + refresh が [LoadState.Error]   → [InitialError]（Req 3.2）
+ * 4. 記事 0 件 + refresh が [LoadState.NotLoading] → [Empty]（Req 6.1）
+ *
+ * @param refresh `LazyPagingItems.loadState.refresh`
+ * @param itemCount `LazyPagingItems.itemCount`
+ * @return 画面全体の排他状態
+ */
+fun resolveTimelineScreenState(
+    refresh: LoadState,
+    itemCount: Int,
+): TimelineScreenState {
+    if (itemCount > 0) {
+        // Req 5.3 / 4.2: 既に表示している一覧を refresh エラーや進行中状態で破壊しない。
+        return TimelineScreenState.Content
+    }
+    return when (refresh) {
+        is LoadState.Loading -> TimelineScreenState.InitialLoading
+        is LoadState.Error -> TimelineScreenState.InitialError
+        is LoadState.NotLoading -> TimelineScreenState.Empty
+    }
 }

@@ -80,4 +80,8 @@
     <string name="state_end_of_list">最後まで読みました</string>
     <!-- Req 6.1, 6.4: FeedmanSheet ドラッグハンドルの contentDescription -->
     <string name="sheet_drag_handle_description">ドラッグハンドル</string>
+
+    <!-- Issue #34: タイムライン pull-to-refresh / 無限スクロール状態 -->
+    <!-- Req 5.2: pull-to-refresh 失敗をユーザー可視メッセージとして通知（snackbar） -->
+    <string name="timeline_refresh_error">最新の取得に失敗しました</string>
 </resources>
