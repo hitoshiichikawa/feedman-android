@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "01HSEARCH00000000000000003A",
+      "feed_id": "01HFEED000000000000000003A",
+      "title": "横断検索ヒット D（終端ページ）",
+      "link": "https://example.com/search-d",
+      "summary": "終端ページの記事",
+      "published_at": "2026-06-11T06:00:00Z",
+      "is_date_estimated": false,
+      "is_read": false,
+      "is_starred": false,
+      "hatebu_count": 1,
+      "feed_title": "Search Source Feed",
+      "favicon_url": null
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}
