@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -58,6 +59,7 @@ import androidx.paging.map
 import com.feedman.android.R
 import com.feedman.android.core.data.ItemStateFailure
 import com.feedman.android.core.designsystem.feedmanColors
+import com.feedman.android.core.designsystem.feedmanDimens
 import com.feedman.android.core.model.ItemSearchHit
 import com.feedman.android.core.ui.ArticleCard
 import com.feedman.android.core.ui.ArticleCardModel
@@ -291,10 +293,12 @@ private fun SearchInputBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Issue #53 Req 3.4: 固定 48dp ではフォントスケール 200% で TextField の縦寸法が
+        // 検索バー枠を超えて切り詰めが発生しうる。heightIn(min) でテキストに追従させる。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(feedman.mutedFg.copy(alpha = 0.08f))
                 .padding(horizontal = 12.dp),
@@ -339,11 +343,17 @@ private fun SearchInputBar(
                     .testTag(SEARCH_INPUT_TEST_TAG),
             )
             // Req 1.4 / 1.5: 値が 1 文字以上のときクリアボタンを表示
+            // Issue #53 Req 4.1: 固定 32dp のタップ標的では 44dp 未満となり誤タップ
+            // が起きやすいため、sizeIn で 44dp 最小タップ標的を確保する。表示アイコン
+            // サイズ（18dp）は維持。
             if (value.isNotEmpty()) {
                 IconButton(
                     onClick = onClear,
                     modifier = Modifier
-                        .sizeIn(minWidth = 32.dp, minHeight = 32.dp)
+                        .sizeIn(
+                            minWidth = MaterialTheme.feedmanDimens.minTapTarget,
+                            minHeight = MaterialTheme.feedmanDimens.minTapTarget,
+                        )
                         .testTag(SEARCH_CLEAR_TEST_TAG),
                 ) {
                     Icon(

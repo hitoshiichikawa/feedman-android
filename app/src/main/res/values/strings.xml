@@ -32,6 +32,23 @@
     <!-- Issue #30: ドロワーフィード一覧 -->
     <!-- Req 1.2: フィード行 favicon の a11y 説明（タイトルは動的 format パラメータ） -->
     <string name="drawer_feed_favicon_description">%1$s の favicon</string>
+    <!-- Issue #53 Req 1.2: フィード行全体の纏まった読み上げ（active / 未読 N 件）
+         %1$s = フィード名, %2$d = 未読件数 -->
+    <string name="drawer_feed_row_description_active">%1$s、未読 %2$d 件</string>
+    <!-- Issue #53 Req 1.2: フィード行全体の纏まった読み上げ（active / 未読 0 件） -->
+    <string name="drawer_feed_row_description_active_no_unread">%1$s</string>
+    <!-- Issue #53 Req 1.2: フィード行全体の纏まった読み上げ（stopped / 未読 N 件） -->
+    <string name="drawer_feed_row_description_stopped">%1$s、停止中、未読 %2$d 件</string>
+    <!-- Issue #53 Req 1.2: フィード行全体の纏まった読み上げ（stopped / 未読 0 件） -->
+    <string name="drawer_feed_row_description_stopped_no_unread">%1$s、停止中</string>
+    <!-- Issue #53 Req 1.2: フィード行全体の纏まった読み上げ（error / 未読 N 件） -->
+    <string name="drawer_feed_row_description_error">%1$s、エラー、未読 %2$d 件</string>
+    <!-- Issue #53 Req 1.2: フィード行全体の纏まった読み上げ（error / 未読 0 件） -->
+    <string name="drawer_feed_row_description_error_no_unread">%1$s、エラー</string>
+    <!-- Issue #53 Req 2.2 / 2.3: スターの状態説明（on/off）。toggleableState と併用して TalkBack が
+         状態変化をアナウンスできるようにする。 -->
+    <string name="article_meta_star_state_on">付与済み</string>
+    <string name="article_meta_star_state_off">未付与</string>
     <!-- Req 2.1: 停止アイコンの a11y 説明 -->
     <string name="drawer_feed_status_stopped">停止中</string>
     <!-- Req 2.2: 警告アイコンの a11y 説明 -->
