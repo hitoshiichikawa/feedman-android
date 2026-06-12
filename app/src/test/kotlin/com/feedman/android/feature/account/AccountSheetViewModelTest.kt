@@ -1,6 +1,8 @@
 package com.feedman.android.feature.account
 
 import app.cash.turbine.test
+import com.feedman.android.core.auth.AccountDeletionCoordinator
+import com.feedman.android.core.auth.DeletionResult
 import com.feedman.android.core.auth.LogoutCoordinator
 import com.feedman.android.core.data.UserRepository
 import com.feedman.android.core.model.User
@@ -396,6 +398,307 @@ class AccountSheetViewModelTest {
         fetchGate.complete(User(id = "x", email = "y"))
     }
 
+    // ── Issue #51: 退会フロー ─────────────────────────────────
+
+    @Test
+    fun `Issue51 Req 1_1 初期 deletion 状態は Idle`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val vm = newVm(repository = StubUserRepository(result = user))
+        vm.open()
+
+        val state = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.DeletionState.Idle, state.deletion)
+    }
+
+    @Test
+    fun `Issue51 Req 1_3 startDeletion で ConfirmExplanation に遷移する`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val vm = newVm(repository = StubUserRepository(result = user))
+        vm.open()
+
+        vm.startDeletion()
+
+        val state = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.DeletionState.ConfirmExplanation, state.deletion)
+    }
+
+    @Test
+    fun `Issue51 Req 1_4 startDeletion 単体では Coordinator perform は呼ばれない`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val deletion = StubAccountDeletionCoordinator()
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+
+        vm.startDeletion()
+
+        assertEquals(0, deletion.callCount)
+    }
+
+    @Test
+    fun `Issue51 Req 2_3 proceedToFinalConfirm で ConfirmFinal に遷移する`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val deletion = StubAccountDeletionCoordinator()
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+        vm.startDeletion()
+
+        vm.proceedToFinalConfirm()
+
+        val state = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.DeletionState.ConfirmFinal, state.deletion)
+        // Req 1.4: まだサーバーへの削除要求は送られていない
+        assertEquals(0, deletion.callCount)
+    }
+
+    @Test
+    fun `Issue51 Req 2_5 1段目で cancelDeletion すると Idle に戻り Coordinator perform は呼ばれない`() =
+        runTest {
+            val user = User(id = "u1", email = "alice@example.com")
+            val deletion = StubAccountDeletionCoordinator()
+            val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+            vm.open()
+            vm.startDeletion()
+
+            vm.cancelDeletion()
+
+            val state = vm.uiState.value as AccountSheetUiState.Visible
+            assertEquals(AccountSheetUiState.DeletionState.Idle, state.deletion)
+            assertEquals(0, deletion.callCount)
+        }
+
+    @Test
+    fun `Issue51 Req 2_5 2段目で cancelDeletion すると Idle に戻り Coordinator perform は呼ばれない`() =
+        runTest {
+            val user = User(id = "u1", email = "alice@example.com")
+            val deletion = StubAccountDeletionCoordinator()
+            val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+            vm.open()
+            vm.startDeletion()
+            vm.proceedToFinalConfirm()
+
+            vm.cancelDeletion()
+
+            val state = vm.uiState.value as AccountSheetUiState.Visible
+            assertEquals(AccountSheetUiState.DeletionState.Idle, state.deletion)
+            assertEquals(0, deletion.callCount)
+        }
+
+    @Test
+    fun `Issue51 Req 2_6 confirmDeletion で Coordinator perform が 1 回呼ばれる`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val deletion = StubAccountDeletionCoordinator(result = DeletionResult.Success)
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+        vm.startDeletion()
+        vm.proceedToFinalConfirm()
+
+        vm.confirmDeletion()
+
+        assertEquals(1, deletion.callCount)
+    }
+
+    @Test
+    fun `Issue51 Req 1_4 ConfirmExplanation 状態で confirmDeletion を呼んでも Coordinator は呼ばれない`() =
+        runTest {
+            val user = User(id = "u1", email = "alice@example.com")
+            val deletion = StubAccountDeletionCoordinator()
+            val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+            vm.open()
+            vm.startDeletion()
+            // proceedToFinalConfirm を呼ばずに confirmDeletion を直接呼ぶ（不正経路の防御）
+
+            vm.confirmDeletion()
+
+            assertEquals("ConfirmFinal でのみ受付", 0, deletion.callCount)
+        }
+
+    @Test
+    fun `Issue51 Req 3_1 confirmDeletion 中は InProgress 状態である`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val gate = CompletableDeferred<DeletionResult>()
+        val deletion = StubAccountDeletionCoordinator(suspendUntil = gate)
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+        vm.startDeletion()
+        vm.proceedToFinalConfirm()
+
+        vm.confirmDeletion()
+
+        val state = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.DeletionState.InProgress, state.deletion)
+
+        // Cleanup
+        gate.complete(DeletionResult.Success)
+    }
+
+    @Test
+    fun `Issue51 Req 3_2 InProgress 中の再 confirmDeletion は無視される`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val gate = CompletableDeferred<DeletionResult>()
+        val deletion = StubAccountDeletionCoordinator(suspendUntil = gate)
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+        vm.startDeletion()
+        vm.proceedToFinalConfirm()
+        vm.confirmDeletion()
+
+        // 同時押下を再現
+        vm.confirmDeletion()
+        vm.confirmDeletion()
+
+        // 1 件のみ起動（Req 3.2: 二重送信抑止）
+        assertEquals(1, deletion.callCount)
+
+        // Cleanup
+        gate.complete(DeletionResult.Success)
+    }
+
+    @Test
+    fun `Issue51 Req 3_2 InProgress 中の cancelDeletion は無視される`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val gate = CompletableDeferred<DeletionResult>()
+        val deletion = StubAccountDeletionCoordinator(suspendUntil = gate)
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+        vm.startDeletion()
+        vm.proceedToFinalConfirm()
+        vm.confirmDeletion()
+
+        // InProgress 中のキャンセル試行
+        vm.cancelDeletion()
+
+        // 状態は InProgress のまま（Req 3.2）
+        val state = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.DeletionState.InProgress, state.deletion)
+
+        // Cleanup
+        gate.complete(DeletionResult.Success)
+    }
+
+    @Test
+    fun `Issue51 Req 3_3 退会フロー中は logout 操作が受付不可になる`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val logout = StubLogoutCoordinator()
+        val vm = newVm(
+            repository = StubUserRepository(result = user),
+            logout = logout,
+        )
+        vm.open()
+
+        // ConfirmExplanation 中
+        vm.startDeletion()
+        vm.logout()
+        assertEquals("ConfirmExplanation 中の logout は呼ばれない", 0, logout.callCount)
+
+        // ConfirmFinal 中
+        vm.proceedToFinalConfirm()
+        vm.logout()
+        assertEquals("ConfirmFinal 中の logout は呼ばれない", 0, logout.callCount)
+    }
+
+    @Test
+    fun `Issue51 Req 4_1 4_5 confirmDeletion 成功で Hidden に戻り cachedUser が破棄される`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val repo = StubUserRepository(result = user)
+        val deletion = StubAccountDeletionCoordinator(result = DeletionResult.Success)
+        val vm = newVm(repository = repo, deletion = deletion)
+        vm.open()
+        assertEquals(1, repo.callCount)
+        vm.startDeletion()
+        vm.proceedToFinalConfirm()
+
+        vm.confirmDeletion()
+
+        // Req 4.5: シートが Hidden に戻る
+        assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
+        // cachedUser 破棄 → 再 open で再フェッチが走る
+        vm.open()
+        assertEquals("成功後の再 open は再フェッチが走る", 2, repo.callCount)
+    }
+
+    @Test
+    fun `Issue51 Req 5_1 5_4 confirmDeletion 失敗で Error 状態に遷移し message を保持する`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val deletion = StubAccountDeletionCoordinator(
+            result = DeletionResult.Failure("退会処理に失敗しました"),
+        )
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+        vm.startDeletion()
+        vm.proceedToFinalConfirm()
+
+        vm.confirmDeletion()
+
+        // Req 5.1〜5.4: Visible のまま、Error 状態で message を表示
+        val state = vm.uiState.value as AccountSheetUiState.Visible
+        val error = state.deletion as AccountSheetUiState.DeletionState.Error
+        assertEquals("退会処理に失敗しました", error.message)
+        // Req 4.5 反証: シートは閉じない（Visible のまま）
+        assertTrue(vm.uiState.value is AccountSheetUiState.Visible)
+    }
+
+    @Test
+    fun `Issue51 Req 5_5 失敗後に startDeletion で再度二段確認をやり直せる`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val deletion = StubAccountDeletionCoordinator(
+            queue = listOf(
+                DeletionResult.Failure("一時的エラー"),
+                DeletionResult.Success,
+            ),
+        )
+        val vm = newVm(repository = StubUserRepository(result = user), deletion = deletion)
+        vm.open()
+        vm.startDeletion()
+        vm.proceedToFinalConfirm()
+        vm.confirmDeletion()
+        assertTrue(
+            (vm.uiState.value as AccountSheetUiState.Visible).deletion
+                is AccountSheetUiState.DeletionState.Error,
+        )
+
+        // Req 5.5: 失敗後の再起動
+        vm.startDeletion()
+        val mid = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.DeletionState.ConfirmExplanation, mid.deletion)
+        vm.proceedToFinalConfirm()
+        vm.confirmDeletion()
+
+        // 2 回目で成功 → Hidden
+        assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
+        assertEquals(2, deletion.callCount)
+    }
+
+    @Test
+    fun `Issue51 Req 1_3 Hidden 状態での startDeletion は no-op`() = runTest {
+        val vm = newVm(repository = StubUserRepository())
+        // open しない（Hidden のまま）
+
+        vm.startDeletion()
+
+        assertEquals(AccountSheetUiState.Hidden, vm.uiState.value)
+    }
+
+    @Test
+    fun `Issue51 Req 1_3 ログアウト進行中は startDeletion を受け付けない`() = runTest {
+        val user = User(id = "u1", email = "alice@example.com")
+        val logoutGate = CompletableDeferred<Unit>()
+        val logout = StubLogoutCoordinator(suspendUntil = logoutGate)
+        val vm = newVm(repository = StubUserRepository(result = user), logout = logout)
+        vm.open()
+        vm.logout()
+        // ログアウト進行中
+
+        vm.startDeletion()
+
+        // deletion は Idle のまま（startDeletion が無視される）
+        val state = vm.uiState.value as AccountSheetUiState.Visible
+        assertEquals(AccountSheetUiState.DeletionState.Idle, state.deletion)
+        assertTrue("logoutInProgress は true のまま", state.logoutInProgress)
+
+        // Cleanup
+        logoutGate.complete(Unit)
+    }
+
     // ── helpers ─────────────────────────────────────────────────────
 
     /**
@@ -407,9 +710,11 @@ class AccountSheetViewModelTest {
     private fun newVm(
         repository: UserRepository,
         logout: LogoutCoordinator = StubLogoutCoordinator(),
+        deletion: AccountDeletionCoordinator = StubAccountDeletionCoordinator(),
     ): AccountSheetViewModel = AccountSheetViewModel(
         repository = repository,
         logoutCoordinator = logout,
+        accountDeletionCoordinator = deletion,
     )
 }
 
@@ -459,6 +764,11 @@ internal class StubUserRepository(
         exception?.let { throw it }
         return result ?: error("StubUserRepository: no result configured")
     }
+
+    /** Issue #51: 本テストは getCurrentUser の検証用途のため、deleteMe は未使用（呼ばれない）。 */
+    override suspend fun deleteMe() {
+        error("StubUserRepository.deleteMe is not used in AccountSheetViewModelTest")
+    }
 }
 
 /**
@@ -477,5 +787,37 @@ internal class StubLogoutCoordinator(
     override suspend fun perform() {
         callCount++
         suspendUntil?.await()
+    }
+}
+
+/**
+ * テスト用 [AccountDeletionCoordinator] スタブ（Issue #51）。
+ *
+ * - 既定: `perform()` で [DeletionResult.Success] を即返す
+ * - `suspendUntil` を指定すると、それが完了するまで perform を保留する
+ *   （InProgress 状態の検証用）
+ * - `result` を指定すると毎回その結果を返す（成功 / 失敗の固定）
+ * - `queue` を指定すると順に消費（最後の値を繰り返す）
+ */
+internal class StubAccountDeletionCoordinator(
+    private val result: DeletionResult = DeletionResult.Success,
+    private val queue: List<DeletionResult>? = null,
+    private val suspendUntil: CompletableDeferred<DeletionResult>? = null,
+) : AccountDeletionCoordinator {
+
+    var callCount: Int = 0
+        private set
+
+    override suspend fun perform(): DeletionResult {
+        val index = callCount
+        callCount++
+
+        if (suspendUntil != null) {
+            return suspendUntil.await()
+        }
+        if (queue != null && queue.isNotEmpty()) {
+            return queue.getOrElse(index) { queue.last() }
+        }
+        return result
     }
 }

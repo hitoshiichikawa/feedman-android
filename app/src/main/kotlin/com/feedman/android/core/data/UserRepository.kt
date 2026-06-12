@@ -33,4 +33,20 @@ interface UserRepository {
      *   認証切れは `code = "UNAUTHORIZED"` を持つ。
      */
     suspend fun getCurrentUser(): User
+
+    /**
+     * `DELETE /api/users/me` を呼び、現在ログイン中ユーザーの退会（全購読・既読/スター状態の
+     * サーバー側削除）を実行する（Issue #51 / SPEC §5.7）。
+     *
+     * 本メソッドは **副作用を持つ不可逆操作** であり、呼び出し側はユーザーへの二段確認を
+     * 完了した後にのみ呼び出すこと（Issue #51 Req 2.x）。サーバーからの 2xx 応答完了で
+     * 正常終了する。ローカルクレデンシャル消去・キャッシュリセット・SessionState 遷移は
+     * 呼び出し側（[com.feedman.android.core.auth.LogoutCoordinator] / 専用 Coordinator）の
+     * 責務であり、本 Repository は API 呼び出しのみに責務を絞る。
+     *
+     * @throws FeedmanException サーバーエラー / ネットワーク失敗を統一的に表現
+     *   （Issue #51 Req 5.1 / 5.3 / 5.4 のエラー通知契約）。code / errorMessage は
+     *   [com.feedman.android.core.network.FeedmanException] の規約に従う。
+     */
+    suspend fun deleteMe()
 }

@@ -2,6 +2,8 @@ package com.feedman.android.feature.account
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.feedman.android.core.auth.AccountDeletionCoordinator
+import com.feedman.android.core.auth.DeletionResult
 import com.feedman.android.core.auth.LogoutCoordinator
 import com.feedman.android.core.data.UserRepository
 import com.feedman.android.core.network.FeedmanException
@@ -52,6 +54,7 @@ import javax.inject.Inject
 class AccountSheetViewModel @Inject constructor(
     private val repository: UserRepository,
     private val logoutCoordinator: LogoutCoordinator,
+    private val accountDeletionCoordinator: AccountDeletionCoordinator,
 ) : ViewModel() {
 
     private val _uiState: MutableStateFlow<AccountSheetUiState> =
@@ -72,6 +75,9 @@ class AccountSheetViewModel @Inject constructor(
 
     /** Issue #50 Req 1.2 / 1.3: ログアウト進行中のジョブ。多重起動を防ぐ。 */
     private var logoutJob: Job? = null
+
+    /** Issue #51 Req 3.2 / 3.3: 退会送信中のジョブ。多重起動を防ぐ。 */
+    private var deletionJob: Job? = null
 
     /**
      * Req 1.1 / 1.2 / 1.4: ドロワーフッタのアカウント項目から呼ばれて、シートを開く。
@@ -131,6 +137,13 @@ class AccountSheetViewModel @Inject constructor(
         if (logoutJob?.isActive == true) return
         val current = _uiState.value
         if (current !is AccountSheetUiState.Visible) return
+        // Issue #51 Req 3.3: 退会フロー中（ConfirmExplanation / ConfirmFinal / InProgress）は
+        // ログアウト操作を受け付けない（UI 上も disabled 表示にする）
+        if (current.deletion !is AccountSheetUiState.DeletionState.Idle &&
+            current.deletion !is AccountSheetUiState.DeletionState.Error
+        ) {
+            return
+        }
 
         // Req 1.3 / 1.4: 進行中状態に遷移
         _uiState.value = current.copy(logoutInProgress = true)
@@ -161,6 +174,125 @@ class AccountSheetViewModel @Inject constructor(
         val current = _uiState.value as? AccountSheetUiState.Visible ?: return
         if (current.loadState !is AccountSheetUiState.LoadState.Error) return
         startFetch()
+    }
+
+    // ── Issue #51: 退会フロー ────────────────────────────────
+
+    /**
+     * Issue #51 Req 1.3 / 2.1 / 2.2: 退会操作を開始する（説明ダイアログを表示する）。
+     *
+     * 観測可能挙動:
+     * - 現在 [AccountSheetUiState.Visible] であり、deletion が `Idle` または `Error` のときのみ
+     *   `ConfirmExplanation` に遷移する（多重ダイアログを避ける）
+     * - 進行中（`ConfirmExplanation` / `ConfirmFinal` / `InProgress`）からの再起動は no-op
+     * - サーバーへの削除要求は送信しない（Req 1.4: 二段確認完了前は送らない）
+     */
+    fun startDeletion() {
+        val current = _uiState.value as? AccountSheetUiState.Visible ?: return
+        // ログアウト進行中は退会フローを起動しない（観測可能状態の競合を避ける）
+        if (current.logoutInProgress) return
+        when (current.deletion) {
+            AccountSheetUiState.DeletionState.Idle,
+            is AccountSheetUiState.DeletionState.Error -> {
+                _uiState.value = current.copy(
+                    deletion = AccountSheetUiState.DeletionState.ConfirmExplanation,
+                )
+            }
+            AccountSheetUiState.DeletionState.ConfirmExplanation,
+            AccountSheetUiState.DeletionState.ConfirmFinal,
+            AccountSheetUiState.DeletionState.InProgress -> Unit
+        }
+    }
+
+    /**
+     * Issue #51 Req 2.3: 第 1 段「次へ進む」操作。
+     *
+     * 観測可能挙動: `ConfirmExplanation` 状態のときのみ `ConfirmFinal` に遷移する。
+     * 他の状態（Idle / ConfirmFinal / InProgress / Error）では no-op（不正呼び出し防御）。
+     * サーバーへの削除要求は送信しない（Req 1.4）。
+     */
+    fun proceedToFinalConfirm() {
+        val current = _uiState.value as? AccountSheetUiState.Visible ?: return
+        if (current.deletion !is AccountSheetUiState.DeletionState.ConfirmExplanation) return
+        _uiState.value = current.copy(
+            deletion = AccountSheetUiState.DeletionState.ConfirmFinal,
+        )
+    }
+
+    /**
+     * Issue #51 Req 2.5: 二段確認のいずれかでキャンセル操作（明示キャンセル / ダイアログ外タップ /
+     * システム戻る）。
+     *
+     * 観測可能挙動:
+     * - `ConfirmExplanation` / `ConfirmFinal` / `Error` のときは `Idle` に戻す
+     *   （Req 2.5: アカウントシート表示状態へ戻す）
+     * - `InProgress` のときは no-op（Req 3.2: 進行中はキャンセル不可。サーバー応答を待つ）
+     * - サーバーへの削除要求は送信しない（Req 1.4 / 2.5）
+     */
+    fun cancelDeletion() {
+        val current = _uiState.value as? AccountSheetUiState.Visible ?: return
+        when (current.deletion) {
+            AccountSheetUiState.DeletionState.ConfirmExplanation,
+            AccountSheetUiState.DeletionState.ConfirmFinal,
+            is AccountSheetUiState.DeletionState.Error -> {
+                _uiState.value = current.copy(
+                    deletion = AccountSheetUiState.DeletionState.Idle,
+                )
+            }
+            AccountSheetUiState.DeletionState.InProgress,
+            AccountSheetUiState.DeletionState.Idle -> Unit
+        }
+    }
+
+    /**
+     * Issue #51 Req 2.6 / 3.1 / 3.2 / 4 / 5: 第 2 段「退会を実行する」確定操作。
+     *
+     * 観測可能挙動:
+     * 1. `ConfirmFinal` 状態のときのみ受け付ける（他は no-op）
+     * 2. `InProgress` に遷移する（Req 3.1 / 3.2 / NFR 1.1: 1 秒以内にローディング表示）
+     * 3. [AccountDeletionCoordinator.perform] を 1 回呼ぶ（Req 2.6）
+     * 4. 成功 → cachedUser を破棄して Hidden に戻す。SessionState 遷移はトークン消去経由で
+     *    AppShell が LoggedOut を描画する（Req 4.3 / 4.4 / 4.5）
+     * 5. 失敗 → `DeletionState.Error(message)` に遷移し、ローカル状態を温存する
+     *    （Req 5.1〜5.5）。ユーザーは再度 `startDeletion()` から二段確認をやり直せる
+     *
+     * 多重起動防止: 既に [deletionJob] が active な間は no-op（Req 3.2 の補強）。
+     * 進行中の現在ユーザー取得ジョブ・ログアウトジョブは互いに矛盾するため本メソッド内で
+     * は **起動しない**（既に Visible 状態で startDeletion 経路を踏んでいる前提）。
+     */
+    fun confirmDeletion() {
+        // 多重起動防止
+        if (deletionJob?.isActive == true) return
+        val current = _uiState.value as? AccountSheetUiState.Visible ?: return
+        if (current.deletion !is AccountSheetUiState.DeletionState.ConfirmFinal) return
+
+        // Req 3.1 / 3.2 / NFR 1.1: 進行中状態に遷移
+        _uiState.value = current.copy(
+            deletion = AccountSheetUiState.DeletionState.InProgress,
+        )
+
+        deletionJob = viewModelScope.launch {
+            // Req 2.6: DELETE /api/users/me を 1 回呼ぶ。Coordinator は例外を投げない契約。
+            val result = accountDeletionCoordinator.perform()
+            val mid = _uiState.value as? AccountSheetUiState.Visible
+            when (result) {
+                DeletionResult.Success -> {
+                    // Req 4.3 / 4.5: cachedUser を破棄し Hidden に戻す。
+                    // SessionState 遷移は TokenStore 消去経由で AppShell が描画切替する。
+                    cachedUser = null
+                    _uiState.value = AccountSheetUiState.Hidden
+                }
+                is DeletionResult.Failure -> {
+                    // Req 5.1〜5.5: ローカル状態は温存。Error 表示に遷移。
+                    // 現在 Visible 状態でなくなっていれば（close 等で）状態反映をスキップ。
+                    if (mid != null) {
+                        _uiState.value = mid.copy(
+                            deletion = AccountSheetUiState.DeletionState.Error(result.message),
+                        )
+                    }
+                }
+            }
+        }
     }
 
     /**

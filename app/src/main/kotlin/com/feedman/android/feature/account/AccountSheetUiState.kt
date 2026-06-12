@@ -29,10 +29,13 @@ sealed interface AccountSheetUiState {
      * @property logoutInProgress Issue #50 Req 1.3 / 1.4: ログアウト処理が進行中か。
      *   `true` の間、ログアウトボタンを disabled にし（再押下不可）、ローディング表現を出す。
      *   `false` のときはログアウトボタンを通常表示する。
+     * @property deletion Issue #51 Req 1〜5: 退会フロー（二段確認 + 進行中 + 失敗）の状態。
+     *   既定は [DeletionState.Idle]（退会フロー未起動）。
      */
     data class Visible(
         val loadState: LoadState,
         val logoutInProgress: Boolean = false,
+        val deletion: DeletionState = DeletionState.Idle,
     ) : AccountSheetUiState
 
     /** ユーザー領域のロード状態（Req 2, 3, 4）。 */
@@ -54,6 +57,46 @@ sealed interface AccountSheetUiState {
          *   汎用文言（state_error / account_sheet_load_error 等）にフォールバックする。
          */
         data class Error(val message: String) : LoadState
+    }
+
+    /**
+     * Issue #51 退会フローの状態（Req 1〜5）。
+     *
+     * シート上の「退会」操作からの一連のゲートを表現する:
+     *
+     * - [Idle]: 退会フロー未起動（既定）。退会ボタンを通常表示する（Req 1.1 / 1.2）
+     * - [ConfirmExplanation]: 第 1 段（説明ダイアログ）表示中（Req 1.3 / 2.1 / 2.2）
+     * - [ConfirmFinal]: 第 2 段（最終確認ダイアログ）表示中（Req 2.3 / 2.4）
+     * - [InProgress]: DELETE /api/users/me 送信中（Req 3.1 / 3.2 / 3.3 / NFR 1.1）
+     * - [Error]: 失敗（ローカル状態は維持 / Req 5.1〜5.5）
+     *
+     * **観測可能挙動**:
+     * - `Idle` / `Error` 状態でのみ退会ボタンが通常表示
+     * - `ConfirmExplanation` / `ConfirmFinal` / `InProgress` の各状態でログアウト操作を
+     *   disabled にする（Req 3.3）
+     * - `InProgress` 中はキャンセル操作を受け付けない（Req 3.2）
+     */
+    sealed interface DeletionState {
+
+        /** 退会フロー未起動。退会ボタンは通常表示。 */
+        data object Idle : DeletionState
+
+        /** 第 1 段: 説明ダイアログ（Req 1.3 / 2.1 / 2.2 / 2.5）。 */
+        data object ConfirmExplanation : DeletionState
+
+        /** 第 2 段: 最終確認ダイアログ（Req 2.3 / 2.4 / 2.5）。 */
+        data object ConfirmFinal : DeletionState
+
+        /** 退会送信中（Req 3.1 / 3.2 / 3.3 / NFR 1.1）。 */
+        data object InProgress : DeletionState
+
+        /**
+         * 失敗（Req 5.1〜5.5）。`message` を UI に表示し、ユーザーが退会フローを
+         * やり直せるよう Idle 経由で再起動可能にする（Req 5.5）。
+         *
+         * @property message Coordinator が解決した非空文言。
+         */
+        data class Error(val message: String) : DeletionState
     }
 }
 

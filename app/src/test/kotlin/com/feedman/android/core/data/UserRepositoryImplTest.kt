@@ -145,4 +145,60 @@ class UserRepositoryImplTest {
             assertEquals("UNAUTHORIZED", ex.code)
             assertEquals(401, ex.httpStatus)
         }
+
+    // ── Issue #51: 退会（DELETE /api/users/me） ─────────────────
+
+    @Test
+    fun `Issue51 Req 2-6 deleteMe issues DELETE to api users me`() = runTest {
+        // Arrange: SPEC §5.7 — 成功時は 2xx（ボディなし）を想定
+        server.enqueue(MockResponse().setResponseCode(204))
+        val repo = newRepository()
+
+        // Act
+        repo.deleteMe()
+
+        // Assert: パス・メソッドの契約（Issue #51 Req 2.6）
+        val recorded = server.takeRequest()
+        assertEquals("DELETE", recorded.method)
+        assertEquals("/api/users/me", recorded.requestUrl?.encodedPath)
+    }
+
+    @Test
+    fun `Issue51 deleteMe 200 OK でも正常終了する 退会成功扱い`() = runTest {
+        // Arrange: 一部のサーバーは 200 OK + 空ボディで応答する可能性も考慮
+        server.enqueue(MockResponse().setResponseCode(200))
+        val repo = newRepository()
+
+        // Act + Assert: 例外が投げられない（正常終了）
+        repo.deleteMe()
+    }
+
+    @Test
+    fun `Issue51 Req 5-3 deleteMe network failure surfaces FeedmanException with NETWORK_ERROR`() =
+        runTest {
+            // Arrange: 接続切断（ネットワーク失敗）
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
+            val repo = newRepository()
+
+            // Act + Assert: Issue #51 Req 5.3 — ネットワーク失敗は FeedmanException として透過
+            val ex = captureFeedmanException { repo.deleteMe() }
+            assertEquals(FeedmanException.CODE_NETWORK_ERROR, ex.code)
+        }
+
+    @Test
+    fun `Issue51 Req 5-1 deleteMe 5xx surfaces FeedmanException with server code and message`() =
+        runTest {
+            // Arrange: SPEC §4.3 エラーボディ（サーバーエラー）
+            val errorBody = """
+                {"error":{"code":"INTERNAL","message":"退会処理に失敗しました","category":"server","action":"retry"}}
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(500).setBody(errorBody))
+            val repo = newRepository()
+
+            // Act + Assert: Issue #51 Req 5.1 / 5.4 — サーバーエラー code/message を保持
+            val ex = captureFeedmanException { repo.deleteMe() }
+            assertEquals("INTERNAL", ex.code)
+            assertEquals("退会処理に失敗しました", ex.errorMessage)
+            assertEquals(500, ex.httpStatus)
+        }
 }

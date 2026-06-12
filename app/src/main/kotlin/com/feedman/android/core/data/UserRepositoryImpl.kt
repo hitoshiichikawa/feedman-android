@@ -26,4 +26,11 @@ class UserRepositoryImpl @Inject constructor(
         // 認証切れは UNAUTHORIZED コードとして上位レイヤに透過される（Req 5.1）。
         return api.getCurrentUser()
     }
+
+    override suspend fun deleteMe() {
+        // Issue #51: SPEC §5.7 DELETE /api/users/me。
+        // ネットワーク失敗 / サーバーエラーは FeedmanException として上位に透過する
+        // （Issue #17 のエラー変換層が責務を担う）。本実装は薄い委譲のみ。
+        api.deleteCurrentUser()
+    }
 }
