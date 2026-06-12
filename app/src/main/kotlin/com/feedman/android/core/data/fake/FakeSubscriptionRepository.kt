@@ -45,6 +45,20 @@ class FakeSubscriptionRepository @Inject constructor() : SubscriptionRepository 
         // no-op: モックデータは静的
     }
 
+    /**
+     * Issue #41: Fake では再開しても結果が変わらないため、対象 Subscription を `active` に
+     * 切り替えた仮想スナップショットを返す（モック UI 確認で「再開」ボタン挙動を疑似体験
+     * できるようにする）。実際の状態 emit は行わない（モックリストは静的なため）。
+     *
+     * @throws IllegalStateException 指定 ID のモックフィードが見つからないとき（呼び出し
+     *   バグの早期検出）
+     */
+    override suspend fun resume(subscriptionId: String): Subscription {
+        val target = MOCK_SUBSCRIPTIONS.firstOrNull { it.id == subscriptionId }
+            ?: error("FakeSubscriptionRepository: subscriptionId=$subscriptionId が見つかりません")
+        return target.copy(feedStatus = "active", errorMessage = null)
+    }
+
     companion object {
         // 1x1 PNG（青）の data URL。`design/SPEC.md` §4.4 に従い `data:<mime>;base64,...` 形式。
         // Favicon Composable（#26）が data URL 経由で画像描画する経路を確認できる。

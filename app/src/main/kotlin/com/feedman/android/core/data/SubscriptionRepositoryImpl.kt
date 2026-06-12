@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -91,6 +92,32 @@ class SubscriptionRepositoryImpl @Inject constructor(
                 },
             )
         }
+    }
+
+    /**
+     * Issue #41 Req 3.5 / 3.7 / 3.8: 停止 / エラー状態の購読を再開する。
+     *
+     * `POST /api/subscriptions/{id}/resume`（SPEC §4.2）を呼び出し、成功時は返ってきた
+     * Subscription を内部の `_subscriptions` の該当 entry を置換して反映する。これにより
+     * [observeSubscriptions] / [observeFeed] を購読中の UI（ドロワー / FeedScreen）が新しい
+     * 状態（active）を観測する。
+     *
+     * 失敗時は [FeedmanException] をそのまま呼び出し元へ投げ返す（UI 側で snackbar 表示する
+     * ため。Req 3.8）。本メソッドは [refreshMutex] でガードしないため、refresh と並行に
+     * 呼ばれても安全（_subscriptions の `update` は MutableStateFlow の atomic 操作）。
+     *
+     * @param subscriptionId 対象 [Subscription.id]
+     * @return 再開後の最新 Subscription
+     */
+    override suspend fun resume(subscriptionId: String): Subscription {
+        val updated = api.resumeSubscription(subscriptionId)
+        _subscriptions.update { current ->
+            current.map { existing ->
+                // SPEC §4.2 の id は ULID で一意。一致したエントリのみ置換する。
+                if (existing.id == subscriptionId) updated else existing
+            }
+        }
+        return updated
     }
 
     /**
