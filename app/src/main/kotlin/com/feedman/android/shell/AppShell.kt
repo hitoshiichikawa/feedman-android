@@ -42,8 +42,9 @@ import com.feedman.android.core.auth.SessionState
 import com.feedman.android.core.auth.SessionStateProvider
 import com.feedman.android.core.designsystem.ThemeMode
 import com.feedman.android.core.designsystem.ThemeModeRepository
-import com.feedman.android.core.ui.FeedmanSheet
 import com.feedman.android.core.ui.LinkOpener
+import com.feedman.android.feature.account.AccountSheet
+import com.feedman.android.feature.account.AccountSheetViewModel
 import com.feedman.android.feature.articledetail.ArticleDetailSheet
 import com.feedman.android.feature.articledetail.ArticleDetailViewModel
 import com.feedman.android.feature.registerfeed.RegisterFeedSheet
@@ -111,6 +112,10 @@ private fun LoggedInShell() {
     // ドロワーの + ボタンから open() で起動する。登録成功時のトーストは AppShell の
     // snackbar host で表示する（シェル直下に shellSnackbarHostState を配置）。
     val registerFeedViewModel: RegisterFeedViewModel = hiltViewModel()
+    // Issue #49: アカウントシートも AppShell スコープで 1 つ保持し、ドロワーフッタの
+    // 「アカウント」項目から open() で起動する。SessionState 観測経由でログイン画面に
+    // 切り替わるため、UI 側で追加 navigate は行わない（onUnauthorized は no-op）。
+    val accountSheetViewModel: AccountSheetViewModel = hiltViewModel()
     val shellSnackbarHostState = remember { SnackbarHostState() }
     val registerSucceededMessage = stringResource(R.string.register_feed_succeeded)
     // Issue #45 Req 3.1〜3.3: 登録は成功したが直後の購読一覧再取得が失敗したことを
@@ -177,9 +182,11 @@ private fun LoggedInShell() {
                     subscriptionSettingsViewModel.open(row.feedId)
                     coroutineScope.launch { drawerState.close() }
                 },
-                // #31 Req 4.2, 4.3: ヘッダのユーザー領域タップでアカウントシート起動 + ドロワー閉
+                // #31 Req 4.2, 4.3 / #49 Req 1.1 / 1.2: ヘッダのユーザー領域タップで
+                // アカウントシート起動 + ドロワー閉。AccountSheetViewModel.open() が
+                // 内部で /auth/me フェッチを開始する（Req 1.2）。
                 onAccountAreaTap = {
-                    viewModel.openSheet(AppShellSheet.Account)
+                    accountSheetViewModel.open()
                     coroutineScope.launch { drawerState.close() }
                 },
                 // #31 Req 5.2, 5.3 / #44 Req 1.1: + ボタンでフィード登録シート起動 + ドロワー閉
@@ -290,6 +297,17 @@ private fun LoggedInShell() {
             // AppShell スコープの snackbar host を Scaffold 内に配置する。NavHost の上に
             // 重ねて描画されるため、フィード登録シートが閉じた直後でも表示が継続する。
             SnackbarHost(hostState = shellSnackbarHostState)
+            // Issue #49: アカウントシート。LoggedInShell の Scaffold 内に配置し、
+            // ドロワーフッタからの起動を accountSheetViewModel.open() で受ける。
+            // 認証切れ時はシート内部で Hidden に戻り、ログイン画面遷移は
+            // SessionStateProvider 観測経由（AppShell の when(sessionState)）で行われる
+            // ため、onUnauthorized は補助的な no-op として残す（Req 5.2 / 5.3）。
+            AccountSheet(
+                onUnauthorized = {
+                    // SessionState 観測ベースで切り替わる。追加 navigate は不要。
+                },
+                viewModel = accountSheetViewModel,
+            )
             // Issue #43: 購読設定シート。LoggedInShell の Scaffold 内（NavHost と同じ
             // スコープ）に配置し、解除成功時に現在の feed/{feedId} ルートと照合できる
             // ようにする（Req 4.5）。
@@ -319,23 +337,14 @@ private fun LoggedInShell() {
         }
     }
 
-    // Req 4.4: placeholder シート。Account 用は #49 で差し替える。
-    // FeedRegistration（#44）は本 Issue で本実装に置き換え済みで、起動点はドロワーの
-    // + ボタンが直接 registerFeedViewModel.open() を呼ぶ。AppShellSheet.FeedRegistration
-    // は後方互換のために enum 値だけ残置するが、AppShellViewModel.openSheet 経由では
-    // 起動されない（参照解除済み）。
+    // Account / FeedRegistration の placeholder シート起動経路は #44 / #49 で本実装に
+    // 置き換え済み（起動点はそれぞれ registerFeedViewModel.open() / accountSheetViewModel.open()）。
+    // AppShellSheet enum と activeSheet は後方互換のため残置するが、AppShellViewModel.openSheet
+    // 経由での起動はいずれも参照解除済みで、本 when は実質 no-op となる。
     when (activeSheet) {
         AppShellSheet.None -> Unit
-        AppShellSheet.Account -> FeedmanSheet(
-            onDismissRequest = { viewModel.dismissSheet() },
-            label = stringResource(R.string.sheet_account_placeholder_title),
-        ) {
-            PlaceholderSheetBody(
-                title = stringResource(R.string.sheet_account_placeholder_title),
-                body = stringResource(R.string.sheet_account_placeholder_body),
-            )
-        }
-        AppShellSheet.FeedRegistration -> Unit // #44 で実装済み（RegisterFeedSheet を直接起動）
+        AppShellSheet.Account -> Unit // #49 で本実装に置換済み（AccountSheet を直接起動）
+        AppShellSheet.FeedRegistration -> Unit // #44 で本実装に置換済み（RegisterFeedSheet を直接起動）
     }
 
     // Req 3.3 / 3.4: LoggedIn セッションが新たに確立されたタイミングで、ドロワー状態を
@@ -343,22 +352,6 @@ private fun LoggedInShell() {
     // 開いていた可能性に備える）。
     LaunchedEffect(Unit) {
         drawerState.close()
-    }
-}
-
-/**
- * 本実装が入るまでの placeholder シート本体（#31 Req 4.4 / 5.4）。
- */
-@Composable
-private fun PlaceholderSheetBody(title: String, body: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(text = title, style = MaterialTheme.typography.titleMedium)
-        Text(text = body, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
