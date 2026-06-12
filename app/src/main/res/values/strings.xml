@@ -8,4 +8,14 @@
     <string name="timeline_empty">記事がありません</string>
     <string name="drawer_timeline">すべての新着</string>
     <string name="drawer_starred">お気に入り（未実装）</string>
+
+    <!-- Issue #27: 共有メタ部品のアクセシビリティラベルと表記 -->
+    <!-- Req 1.5: is_starred=true 時のスタートグル contentDescription -->
+    <string name="article_meta_star_remove">スターを解除</string>
+    <!-- Req 1.6: is_starred=false 時のスタートグル contentDescription -->
+    <string name="article_meta_star_add">スターを付ける</string>
+    <!-- Req 2.3: hot バリアント末尾の単位サフィックス -->
+    <string name="article_meta_hatebu_users_suffix">users</string>
+    <!-- Req 2.5: はてブアイコンの contentDescription -->
+    <string name="article_meta_hatebu_icon_description">はてブ数</string>
 </resources>
