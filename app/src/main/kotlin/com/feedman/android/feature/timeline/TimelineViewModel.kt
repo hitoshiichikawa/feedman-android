@@ -6,57 +6,65 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.feedman.android.core.data.CrossFeedRepository
-import com.feedman.android.core.data.ItemDetailRepository
 import com.feedman.android.core.data.ItemRepository
+import com.feedman.android.core.data.ItemStateOverlay
+import com.feedman.android.core.data.ItemStateStore
 import com.feedman.android.core.model.AppConfig
-import com.feedman.android.core.network.FeedmanException
 import com.feedman.android.core.ui.ArticleCardModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * 横断タイムライン画面の ViewModel（Issue #33 / Req 5.1〜5.4 / NFR 2.1）。
+ * 横断タイムライン画面の ViewModel（Issue #33 / Issue #38）。
  *
  * 横断新着タイムラインを `Flow<PagingData<ArticleCardModel>>` として公開する。Paging 3 の
  * `cachedIn(viewModelScope)` でセッション中はキャッシュを保持し、再コンポジション時に
  * 再ロードが走らないようにする（NFR 2.1）。
  *
+ * ## Issue #38 — ItemStateStore 連携（Req 1.1 / 3.1〜3.4 / 4.4 / 5.2）
+ *
+ * 既読 / スターの楽観的更新は [ItemStateStore] が単一データ点として保持する。本 VM は:
+ *
+ * - `cachedIn` 後の `PagingData<ArticleCardModel>` と `store.overlays` を `combine` し、
+ *   overlay 値をサーバー由来値より優先して各カードの isRead / isStarred を解決する（Req 3.1）。
+ * - 外部リンク起動成功後の既読化を `store.markRead` 経由で発火（Req 5.2）。失敗時 snackbar は
+ *   store の `failures` 経由で発火する（Req 2.3）— 本 VM が再送する SharedFlow は
+ *   外部リンク自体の起動失敗（OpenLinkFailed）通知のみに役割を絞る。
+ * - スタートグルは [toggleStar] が `store.setStarred` を呼び出し、楽観的反映とサーバー反映
+ *   失敗時のロールバックを store に委譲する（Req 1.1 / 4.4）。
+ *
  * ## mockMode 分岐
  *
  * `AppConfig.mockMode == true` のときは [ItemRepository] のモックスナップショットを
  * `PagingData.from(...)` で 1 ページに包んで流す（Paging 3 のテスト用ファクトリ）。
- * これは API 接続不要な開発時起動（`-Pfeedman.mockMode=true`）で TimelineScreen を即時
- * 表示するための便宜機能で、実機の挙動とは別系統である。
  *
  * ## 公開 API
  *
  * - [cardPagingData]: 画面が `collectAsLazyPagingItems()` で購読する `Flow<PagingData<ArticleCardModel>>`
- *
- * 共有 ArticleCard 部品（Issue #27 / #33）への変換は [TimelineCardModelMapper] に委譲する。
+ *   （overlay 合成済み）
+ * - [externalLinkEvents]: 外部リンク **起動自体**の失敗通知（既読化失敗は store.failures に統一）
+ * - [toggleStar]: スタートグル
+ * - [markReadOnExternalOpen]: 外部リンク起動成功後の既読化
  */
 @HiltViewModel
 class TimelineViewModel @Inject constructor(
     private val crossFeedRepository: CrossFeedRepository,
     private val itemRepository: ItemRepository,
     private val appConfig: AppConfig,
-    /**
-     * Issue #37: タイムラインカードの外部リンクアイコンタップで Custom Tabs を開いた後、
-     * 当該記事を既読化（`is_read:true`）するために `ItemDetailRepository.updateState` を呼ぶ。
-     * 失敗時は [externalLinkEvents] に [TimelineExternalLinkEvent.MarkReadFailed] を流して
-     * UI 側で snackbar 通知する（Req 2.4）。画面間表示同期は #38 のスコープのため、ここでは
-     * タイムライン側のカード表示更新は次の refresh 任せにする（impl-notes 参照）。
-     */
-    private val itemDetailRepository: ItemDetailRepository,
+    private val itemStateStore: ItemStateStore,
 ) : ViewModel() {
 
-    // Issue #37 Req 2.4: 既読化失敗時の one-shot 通知（replay=0, buffer=4）。
-    // UI 側は collect して snackbar を表示する。
+    // Issue #37 Req 4.x: 外部リンクの起動自体の失敗（InvalidUrl / NoAppToHandle）通知のみを
+    // 本 VM の SharedFlow で扱う。既読化失敗は ItemStateStore.failures に統一されている
+    // ため、UI 側はそちらを別途購読する。
     private val _externalLinkEvents = MutableSharedFlow<TimelineExternalLinkEvent>(
         replay = 0,
         extraBufferCapacity = 4,
@@ -64,22 +72,40 @@ class TimelineViewModel @Inject constructor(
     val externalLinkEvents: SharedFlow<TimelineExternalLinkEvent> = _externalLinkEvents.asSharedFlow()
 
     /**
-     * 外部リンク起動成功時の既読化（Issue #37 Req 2.2 / 2.4）。
+     * Issue #38 Req 2.3 経由の購読向けに `ItemStateStore.failures` を再公開する。
+     * UI 側は本 VM のみを観測すれば良い構造を維持する。
+     */
+    val itemStateFailures: SharedFlow<com.feedman.android.core.data.ItemStateFailure> =
+        itemStateStore.failures
+
+    /**
+     * 外部リンク起動成功時の既読化（Issue #37 Req 2.2 / Issue #38 Req 5.2）。
      *
-     * `is_read:true` のサーバー反映に失敗した場合は [TimelineExternalLinkEvent.MarkReadFailed]
-     * を流す（既読のロールバックは行わない — タイムライン側は楽観的な内部 mutable 状態を
-     * 保持していないため。画面間表示同期は #38 のスコープ）。
+     * [ItemStateStore.markRead] が冪等性（既読なら no-op）とサーバー反映、失敗時 snackbar 通知
+     * （`failures`）までを担う。
      *
      * @param itemId 外部リンクを開いた記事の ID
+     * @param currentIsRead overlay 合成後の現在の既読状態（カード描画から渡す）
      */
-    fun markReadOnExternalOpen(itemId: String) {
-        viewModelScope.launch {
-            try {
-                itemDetailRepository.updateState(itemId = itemId, isRead = true, isStarred = null)
-            } catch (e: FeedmanException) {
-                _externalLinkEvents.emit(TimelineExternalLinkEvent.MarkReadFailed)
-            }
-        }
+    fun markReadOnExternalOpen(itemId: String, currentIsRead: Boolean) {
+        itemStateStore.markRead(itemId = itemId, currentIsRead = currentIsRead)
+    }
+
+    /**
+     * カードのスタートグル（Issue #38 Req 1.1 / 4.4）。
+     *
+     * [ItemStateStore.setStarred] が楽観的反映・サーバー反映・失敗時ロールバック・通知までを担う。
+     *
+     * @param itemId 対象記事 ID
+     * @param newState トグル後の新しいスター状態（!current）
+     * @param baselineStarred ロールバック先（合成前のサーバー値 or 直前の overlay 値）
+     */
+    fun toggleStar(itemId: String, newState: Boolean, baselineStarred: Boolean) {
+        itemStateStore.setStarred(
+            itemId = itemId,
+            isStarred = newState,
+            baselineStarred = baselineStarred,
+        )
     }
 
     /**
@@ -89,8 +115,6 @@ class TimelineViewModel @Inject constructor(
      * 既読化は走らない（Req 4.3）。
      */
     fun notifyExternalLinkFailed() {
-        // SharedFlow.tryEmit は replay=0 / buffer 余裕がある間は同期的に成功するが、念のため
-        // viewModelScope で emit を行うことでバッファ枯渇時の待ち合わせも吸収する。
         viewModelScope.launch {
             _externalLinkEvents.emit(TimelineExternalLinkEvent.OpenLinkFailed)
         }
@@ -99,29 +123,29 @@ class TimelineViewModel @Inject constructor(
     /**
      * カード描画用 PagingData の Flow。Composable は `collectAsLazyPagingItems()` で購読する。
      *
-     * - mockMode=false: `CrossFeedRepository.pagingData()` を `ArticleCardModel` に map
-     * - mockMode=true: `ItemRepository.observeTimeline()` の最新スナップショットを
-     *   `PagingData.from(...)` に詰めて 1 ページ相当を流す（開発時起動の便宜）
-     *
-     * いずれの分岐でも `cachedIn(viewModelScope)` でキャッシュし、画面回転や再コンポジション
-     * 時の再ロードを防止する（NFR 2.1）。
+     * `cachedIn(viewModelScope)` 後に `overlays` と `combine` し、各カードの isRead / isStarred を
+     * overlay 値で上書きしてから配信する（Issue #38 Req 3.1〜3.4）。
      */
-    val cardPagingData: Flow<PagingData<ArticleCardModel>> = buildCardPagingData()
-        .cachedIn(viewModelScope)
+    val cardPagingData: Flow<PagingData<ArticleCardModel>> =
+        buildBaseCardPagingData()
+            .cachedIn(viewModelScope)
+            .combineWithOverlays(itemStateStore.overlays)
 
     /**
      * テスト用に公開する変換ロジック本体。`cachedIn(viewModelScope)` 適用前の生 Flow を
-     * 返すため、JVM 単体テストで `asSnapshot()` を呼んでも viewModelScope の長寿命 collector
-     * が残らない（`runTest` が `UncompletedCoroutinesError` で失敗しなくなる）。
-     *
-     * Composable からは直接呼ばず、必ず [cardPagingData] を経由する（キャッシュ整合のため）。
+     * overlay と合成したものを返す。長寿命 collector が残らないため `runTest` 上で
+     * `asSnapshot()` を呼べる。
      */
-    internal fun cardPagingDataForTest(): Flow<PagingData<ArticleCardModel>> = buildCardPagingData()
+    internal fun cardPagingDataForTest(): Flow<PagingData<ArticleCardModel>> {
+        // `combine(stateFlow)` は StateFlow が完了しないため `asSnapshot()` が
+        // テスト終了時に `UncompletedCoroutinesError` を起こす。`take(1)` で 1 つ目の
+        // overlay スナップショットを取り出した時点で完了させる（合成結果の検証には
+        // 1 回の値で十分。`overlays` は StateFlow なので必ず即座に値を持っている）。
+        return buildBaseCardPagingData().combineWithOverlays(itemStateStore.overlays.take(1))
+    }
 
-    private fun buildCardPagingData(): Flow<PagingData<ArticleCardModel>> {
+    private fun buildBaseCardPagingData(): Flow<PagingData<ArticleCardModel>> {
         return if (appConfig.mockMode) {
-            // mockMode: MockTimelineItem のスナップショットを 1 ページとして流す。
-            // `PagingData.from(...)` は静的データ用のテスト・モック向けファクトリ（公式 API）。
             itemRepository.observeTimeline().map { mockItems ->
                 val cards = mockItems.map { mockItem ->
                     TimelineCardModelMapper.toMockCardModel(
@@ -132,8 +156,6 @@ class TimelineViewModel @Inject constructor(
                 PagingData.from(cards)
             }
         } else {
-            // 実 API モード: CrossFeedRepository が返す PagingData<CrossFeedItem> を
-            // ArticleCardModel に map する（Paging 3 公式 `PagingData.map`）。
             crossFeedRepository.pagingData().map { paging ->
                 paging.map { TimelineCardModelMapper.toCardModel(it) }
             }
@@ -141,16 +163,27 @@ class TimelineViewModel @Inject constructor(
     }
 
     private companion object {
-        /**
-         * mockMode で MockTimelineItem を ArticleCardModel に変換する際の fallback ISO 値。
-         *
-         * MockTimelineItem.publishedAt は事前整形された相対表現文字列なので、
-         * RelativeTimeFormatter（Issue #27）が解釈できる ISO-8601 値を流し込む必要がある。
-         * 一定の固定値（リリースの semantic version とは無関係）で十分（開発時起動用途のため）。
-         */
         const val MOCK_FALLBACK_PUBLISHED_AT_ISO: String = "2026-06-12T11:30:00Z"
     }
 }
 
-// 旧 `TimelineUiState` は Issue #33 で削除した（カード描画は LazyPagingItems を直接
-// 購読する Compose 側に集約したため）。
+/**
+ * `PagingData<ArticleCardModel>` の Flow と overlay の Flow を `combine` し、
+ * overlay 値で各カードの isRead / isStarred を上書きする（Issue #38 Req 3.1〜3.4）。
+ *
+ * `cachedIn(viewModelScope)` の **後** に呼ばれることを想定する。生 Flow に対して呼んだ場合
+ * テスト用途では問題ないが、本番経路では `cachedIn` の前に置くと購読ごとに Pager が
+ * 再生成されてしまうため避ける。
+ */
+private fun Flow<PagingData<ArticleCardModel>>.combineWithOverlays(
+    overlays: Flow<Map<String, ItemStateOverlay>>,
+): Flow<PagingData<ArticleCardModel>> =
+    combine(overlays) { paging, currentOverlays ->
+        paging.map { card ->
+            val o = currentOverlays[card.id] ?: return@map card
+            card.copy(
+                isRead = o.isRead ?: card.isRead,
+                isStarred = o.isStarred ?: card.isStarred,
+            )
+        }
+    }

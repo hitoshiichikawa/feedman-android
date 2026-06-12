@@ -3,6 +3,9 @@ package com.feedman.android.feature.articledetail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feedman.android.core.data.ItemDetailRepository
+import com.feedman.android.core.data.ItemStateFailure
+import com.feedman.android.core.data.ItemStateStore
+import com.feedman.android.core.model.ItemDetail
 import com.feedman.android.core.network.FeedmanException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -10,125 +13,145 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * 記事詳細シートの ViewModel（Issue #36 / Req 1, 3, 4, 5, 6 / NFR 1.1）。
+ * 記事詳細シートの ViewModel（Issue #36 / Issue #38）。
  *
- * シート起動 → 詳細取得 → 自動既読化 → 表示 という直線的なフローを扱い、
- * 既読化 / スター更新の楽観的更新と失敗時ロールバックを担当する。シート単体に閉じる範囲のみ
- * を扱い、画面横断同期（呼び出し元一覧の行への反映）は Issue #38 に切り出している
- * （requirements.md "Out of Scope" 参照）。
+ * シート起動 → 詳細取得 → 自動既読化 → 表示 という直線的なフローを扱い、既読化 / スター更新の
+ * 楽観的更新と失敗時通知は [ItemStateStore] に集約する（Issue #38 Req 4.3 / 4.4）。
  *
  * ## 状態遷移
  *
  * ```
  * Hidden ──open(id)──▶ Loading ──成功──▶ Content（即時既読化を内部で発火）
  *                              └──失敗──▶ Error ──retry──▶ Loading
- * Content ──toggleStar──▶ Content（楽観更新 → 失敗時ロールバック + event 発火）
+ * Content ──toggleStar──▶ Content（store 経由で楽観更新 → 失敗時は store がロールバック）
  * 任意 ──dismiss──▶ Hidden
  * ```
  *
- * ## 楽観的更新の規約
+ * ## 楽観的更新の規約（#38 連携）
  *
- * - **既読化（Req 3）**: シート Composable が表示された時点（Content への遷移時）に
- *   `isRead=true` を内部状態に即時反映 + サーバー API を呼ぶ。元が既読のときは API を
- *   呼ばない（Req 3.5 — 冪等）。失敗時は内部状態を `isRead=false` に巻き戻し
- *   [events] で [ArticleDetailEvent.MarkReadFailed] を流す（Req 3.3）。
- * - **スター（Req 4）**: [toggleStar] が呼ばれた瞬間に内部状態をトグル + サーバー API を呼ぶ。
- *   失敗時はトグル前の値に巻き戻し [events] で [ArticleDetailEvent.StarUpdateFailed] を流す
- *   （Req 4.5）。本文上部とフッタのスター表示は同じ `Content.isStarred` を参照することで
- *   常に整合する（Req 4.6 / Req 5.3）。
+ * - **既読化（Req 3 / Issue #38 Req 5.1）**: シート Composable が表示された時点
+ *   （Content への遷移時）に `store.markRead(itemId, currentIsRead)` を呼ぶ。`currentIsRead`
+ *   はサーバー値ベース。store は冪等性とサーバー反映・失敗イベント発行を担う。
+ * - **スター（Req 4 / Issue #38 Req 1.1）**: [toggleStar] が `store.setStarred` を呼ぶ。
+ * - **Content の表示値（isRead / isStarred）**: サーバー由来値（[ItemDetail]）と
+ *   `store.overlays` を combine して合成する。ある画面で行ったトグル結果が他画面に反映される
+ *   経路もこの購読で実現する（Issue #38 Req 4.2 / 4.3）。
+ * - **失敗通知**: 後方互換性のため [events] は維持するが、内部実装は store.failures を
+ *   購読してリレーする。
  *
  * ## 「元記事を開く」既読化
  *
- * [markReadOnOpenExternal] は Req 4.3 に対応。未読のときのみ既読化 API を呼ぶ。シート起動時の
- * 既読化（Req 3.1）と同じパスを通るが、既に既読であれば即座に no-op として返す（Req 4.3）。
+ * [markReadOnOpenExternal] は store の markRead に委譲する（冪等）。
  *
  * ## DI
  *
- * `RepositoryModule` でバインド済みの [ItemDetailRepository] を Hilt から注入する。
- * 単体テストでは fake repository を直接コンストラクタへ渡す（NFR 1.1）。
+ * `RepositoryModule` でバインド済みの [ItemDetailRepository] と Singleton の [ItemStateStore]
+ * を Hilt から注入する。単体テストでは fake repository と fresh store を直接渡す。
  */
 @HiltViewModel
 class ArticleDetailViewModel @Inject constructor(
     private val repository: ItemDetailRepository,
+    private val itemStateStore: ItemStateStore,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<ArticleDetailUiState>(ArticleDetailUiState.Hidden)
-    val uiState: StateFlow<ArticleDetailUiState> = _uiState.asStateFlow()
+    // 詳細取得結果と loading/error を保持する内部 raw state。
+    // 公開する uiState は store.overlays と combine してから露出する。
+    private val _rawState = MutableStateFlow<RawState>(RawState.Hidden)
 
-    // replay = 0: 一度だけ届く one-shot 通知。再コンポジションでは再送しない（Req 3.3 / 4.5）。
+    val uiState: StateFlow<ArticleDetailUiState> =
+        combine(_rawState, itemStateStore.overlays) { raw, overlays ->
+            raw.toUiState(overlays)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = ArticleDetailUiState.Hidden,
+        )
+
     private val _events = MutableSharedFlow<ArticleDetailEvent>(replay = 0, extraBufferCapacity = 4)
+
+    /**
+     * 既読 / スター更新失敗の one-shot 通知。実体は [ItemStateStore.failures] のリレー。
+     * 後方互換性のため `MarkReadFailed` / `StarUpdateFailed` の sealed class を維持する。
+     */
     val events: SharedFlow<ArticleDetailEvent> = _events.asSharedFlow()
 
-    /**
-     * シートを開く（Req 1.1）。
-     *
-     * `itemId` で `getItem(id)` を発行し、成功時に [ArticleDetailUiState.Content] へ遷移、
-     * 同時にシート起動時の自動既読化（Req 3.1, 3.2）を発火する。
-     *
-     * 既に同じ ID で Loading / Content / Error のいずれかにある状態で再呼び出しされても、
-     * **常に再取得から始める**（明示的に閉じる前提のため重複起動は起きないが、保険として）。
-     */
-    fun open(itemId: String) {
-        _uiState.value = ArticleDetailUiState.Loading(itemId = itemId)
+    init {
+        // Issue #38 Req 2.3: store.failures を購読し、当 ViewModel の events に変換する。
+        // 詳細シートが見ている item の失敗だけでなく全体の failure を受けるため、UI 側で
+        // 必要に応じてフィルタする（v1 では現状の Content.itemId に紐づくものだけを反応させる）。
         viewModelScope.launch {
-            fetchAndApply(itemId = itemId)
-        }
-    }
-
-    /**
-     * シートを閉じる（Req 1.4, 1.5）。状態を [ArticleDetailUiState.Hidden] に戻す。
-     */
-    fun dismiss() {
-        _uiState.value = ArticleDetailUiState.Hidden
-    }
-
-    /**
-     * 取得失敗 → 再試行（Req 6.3）。現在の Error 状態の `itemId` で再度 [open] を行う。
-     */
-    fun retry() {
-        val current = _uiState.value
-        if (current is ArticleDetailUiState.Error) {
-            open(itemId = current.itemId)
-        }
-    }
-
-    /**
-     * フッタ / 本文上部スタートグル（Req 4.4, 4.5, 4.6）。
-     *
-     * Content 状態でのみ動作。即時 UI 反映 → サーバー API → 失敗ロールバック + イベント。
-     */
-    fun toggleStar() {
-        val current = _uiState.value as? ArticleDetailUiState.Content ?: return
-        val previous = current.isStarred
-        val next = !previous
-        _uiState.value = current.copy(isStarred = next)
-
-        viewModelScope.launch {
-            try {
-                repository.updateState(itemId = current.detail.id, isRead = null, isStarred = next)
-            } catch (e: FeedmanException) {
-                // ロールバック対象が依然として同じ記事の Content であることを保証
-                rollbackStarIfStillSameContent(itemId = current.detail.id, previous = previous)
-                _events.emit(ArticleDetailEvent.StarUpdateFailed)
+            itemStateStore.failures.collect { failure ->
+                val raw = _rawState.value
+                if (raw is RawState.Content && raw.detail.id == failure.itemId) {
+                    val event = when (failure.kind) {
+                        ItemStateFailure.Kind.Read -> ArticleDetailEvent.MarkReadFailed
+                        ItemStateFailure.Kind.Star -> ArticleDetailEvent.StarUpdateFailed
+                    }
+                    _events.emit(event)
+                }
             }
         }
     }
 
     /**
-     * 「元記事を開く」タップ時の既読化（Req 4.3）。
+     * シートを開く（Req 1.1）。
      *
-     * 未読の場合のみ既読化 API を発火する（冪等）。シート起動時の既読化（Req 3.1）と
-     * 同じパスを通る。
+     * `itemId` で `getItem(id)` を発行し、成功時に Content へ遷移、同時にシート起動時の
+     * 自動既読化（Req 3.1, 3.2 / Issue #38 Req 5.1）を `store.markRead` 経由で発火する。
+     */
+    fun open(itemId: String) {
+        _rawState.value = RawState.Loading(itemId = itemId)
+        viewModelScope.launch {
+            fetchAndApply(itemId = itemId)
+        }
+    }
+
+    /** シートを閉じる（Req 1.4, 1.5）。状態を [ArticleDetailUiState.Hidden] に戻す。 */
+    fun dismiss() {
+        _rawState.value = RawState.Hidden
+    }
+
+    /** 取得失敗 → 再試行（Req 6.3）。現在の Error 状態の `itemId` で再度 [open] を行う。 */
+    fun retry() {
+        val current = _rawState.value
+        if (current is RawState.Error) {
+            open(itemId = current.itemId)
+        }
+    }
+
+    /**
+     * フッタ / 本文上部スタートグル（Req 4.4, 4.5, 4.6 / Issue #38 Req 1.1）。
+     *
+     * Content 状態でのみ動作。`uiState` の最新の表示値（overlay 合成済み）を起点に新値を計算し、
+     * store に委譲する。
+     */
+    fun toggleStar() {
+        val raw = _rawState.value as? RawState.Content ?: return
+        val current = uiState.value as? ArticleDetailUiState.Content ?: return
+        val previous = current.isStarred
+        val next = !previous
+        itemStateStore.setStarred(
+            itemId = raw.detail.id,
+            isStarred = next,
+            baselineStarred = previous,
+        )
+    }
+
+    /**
+     * 「元記事を開く」タップ時の既読化（Req 4.3 / Issue #38 Req 5.2）。
+     *
+     * 未読の場合のみ既読化 API を発火する（store.markRead が冪等性を担う）。
      */
     fun markReadOnOpenExternal() {
-        val current = _uiState.value as? ArticleDetailUiState.Content ?: return
-        if (current.isRead) return
-        applyOptimisticRead(itemId = current.detail.id, current = current)
+        val current = uiState.value as? ArticleDetailUiState.Content ?: return
+        itemStateStore.markRead(itemId = current.detail.id, currentIsRead = current.isRead)
     }
 
     // ── 内部処理 ─────────────────────────────────────────────────────────
@@ -138,56 +161,45 @@ class ArticleDetailViewModel @Inject constructor(
             repository.getItem(itemId = itemId)
         } catch (e: FeedmanException) {
             // Req 6.2: 取得失敗をエラー状態として保持
-            _uiState.value = ArticleDetailUiState.Error(itemId = itemId, message = e.errorMessage)
+            _rawState.value = RawState.Error(itemId = itemId, message = e.errorMessage)
             return
         }
 
         // 取得成功 → Content へ遷移（Req 1.1）。
-        // Req 3.1: シート表示時に楽観的既読化を即時反映。元が既読のときは API を呼ばない
-        // （Req 3.5 — 冪等）。
-        val initialContent = ArticleDetailUiState.Content(
-            detail = detail,
-            isRead = true, // Req 3.1, 3.4 — 即時に既読として描画
-            isStarred = detail.isStarred,
-        )
-        _uiState.value = initialContent
+        _rawState.value = RawState.Content(detail = detail)
 
-        if (!detail.isRead) {
-            // Req 3.2: サーバーに既読更新リクエストを送出
-            try {
-                repository.updateState(itemId = detail.id, isRead = true, isStarred = null)
-            } catch (e: FeedmanException) {
-                // Req 3.3: ロールバック + 通知。同じ Content がまだ表示中の場合のみロールバック。
-                rollbackReadIfStillSameContent(itemId = detail.id)
-                _events.emit(ArticleDetailEvent.MarkReadFailed)
+        // Req 3.1 / 3.2 / Issue #38 Req 5.1: シート表示時に既読化トリガーを発火。
+        // store が冪等性（detail.isRead=true なら no-op）・サーバー反映・失敗通知までを担う。
+        itemStateStore.markRead(itemId = detail.id, currentIsRead = detail.isRead)
+    }
+
+    // ── 内部 raw state（overlay 合成前） ────────────────────────────────
+
+    /**
+     * overlay 合成前の素のシート状態。Loading / Error / Hidden は overlay と無関係なので
+     * そのまま外部 [ArticleDetailUiState] に対応する。Content だけは store.overlays を
+     * 適用した値で [ArticleDetailUiState.Content] に変換する。
+     */
+    private sealed class RawState {
+        data object Hidden : RawState()
+        data class Loading(val itemId: String) : RawState()
+        data class Content(val detail: ItemDetail) : RawState()
+        data class Error(val itemId: String, val message: String) : RawState()
+
+        fun toUiState(
+            overlays: Map<String, com.feedman.android.core.data.ItemStateOverlay>,
+        ): ArticleDetailUiState = when (this) {
+            is Hidden -> ArticleDetailUiState.Hidden
+            is Loading -> ArticleDetailUiState.Loading(itemId = itemId)
+            is Error -> ArticleDetailUiState.Error(itemId = itemId, message = message)
+            is Content -> {
+                val overlay = overlays[detail.id]
+                ArticleDetailUiState.Content(
+                    detail = detail,
+                    isRead = overlay?.isRead ?: detail.isRead,
+                    isStarred = overlay?.isStarred ?: detail.isStarred,
+                )
             }
-        }
-        // else: Req 3.5 — 既読のまま再送しない
-    }
-
-    private fun applyOptimisticRead(itemId: String, current: ArticleDetailUiState.Content) {
-        _uiState.value = current.copy(isRead = true)
-        viewModelScope.launch {
-            try {
-                repository.updateState(itemId = itemId, isRead = true, isStarred = null)
-            } catch (e: FeedmanException) {
-                rollbackReadIfStillSameContent(itemId = itemId)
-                _events.emit(ArticleDetailEvent.MarkReadFailed)
-            }
-        }
-    }
-
-    private fun rollbackReadIfStillSameContent(itemId: String) {
-        val s = _uiState.value
-        if (s is ArticleDetailUiState.Content && s.detail.id == itemId) {
-            _uiState.value = s.copy(isRead = false)
-        }
-    }
-
-    private fun rollbackStarIfStillSameContent(itemId: String, previous: Boolean) {
-        val s = _uiState.value
-        if (s is ArticleDetailUiState.Content && s.detail.id == itemId) {
-            _uiState.value = s.copy(isStarred = previous)
         }
     }
 }
