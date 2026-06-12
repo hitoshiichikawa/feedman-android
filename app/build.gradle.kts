@@ -132,6 +132,10 @@ dependencies {
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.paging.common)
 
+    // Coil (Issue #26: data URL の favicon 復号 + Compose 連携)
+    // — gradle/libs.versions.toml で coil = 2.7.0 を宣言済み。
+    implementation(libs.coil.compose)
+
     // Test
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

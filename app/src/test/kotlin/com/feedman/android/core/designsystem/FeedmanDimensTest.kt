@@ -52,4 +52,35 @@ class FeedmanDimensTest {
         assertEquals(18.dp, dimens.iconSmall)
         assertEquals(22.dp, dimens.iconLarge)
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  Issue #26: Favicon サイズバリアント / 角丸
+    //  Req 4.1: 複数サイズ（小・大）
+    //  Req 4.4: design/mobile/fm-ui.jsx FMFavicon 利用箇所のサイズに揃える
+    //  Req 5.1: 正方形 + 角丸
+    // ─────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `Issue 26 Req 4_4 favicon size tokens match FMFavicon usage 16-18-28-32dp`() {
+        // fm-ui.jsx の FMFavicon 利用箇所: size=16(article minimal/standard) / size=18(timeline magazine/cards) /
+        // size=28(FMFavicon デフォルト) / size=32(timeline list, ドロワー想定)
+        assertEquals(16.dp, dimens.faviconExtraSmall)
+        assertEquals(18.dp, dimens.faviconSmall)
+        assertEquals(28.dp, dimens.faviconMedium)
+        assertEquals(32.dp, dimens.faviconLarge)
+    }
+
+    @Test
+    fun `Issue 26 Req 4_1 favicon size tokens are ordered ascending`() {
+        assertTrue(dimens.faviconExtraSmall < dimens.faviconSmall)
+        assertTrue(dimens.faviconSmall < dimens.faviconMedium)
+        assertTrue(dimens.faviconMedium < dimens.faviconLarge)
+    }
+
+    @Test
+    fun `Issue 26 Req 5_1 favicon corner radius is positive dp`() {
+        assertTrue("faviconCornerRadius>0", dimens.faviconCornerRadius > 0.dp)
+        // プロト FMFavicon の radius=8 をデフォルトとする
+        assertEquals(8.dp, dimens.faviconCornerRadius)
+    }
 }
