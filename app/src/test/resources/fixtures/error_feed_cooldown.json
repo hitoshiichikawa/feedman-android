@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "FEED_COOLDOWN",
+    "message": "このフィードは直前に同期したばかりです。30秒後にお試しください。",
+    "category": "rate_limit",
+    "action": "wait_and_retry",
+    "details": {
+      "retry_after_seconds": 30
+    }
+  }
+}
