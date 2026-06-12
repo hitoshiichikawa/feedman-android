@@ -9,6 +9,8 @@ import com.feedman.android.core.data.FeedRegistrationRepositoryImpl
 import com.feedman.android.core.data.ItemDetailRepository
 import com.feedman.android.core.data.ItemDetailRepositoryImpl
 import com.feedman.android.core.data.ItemRepository
+import com.feedman.android.core.data.StarredItemsRepository
+import com.feedman.android.core.data.StarredItemsRepositoryImpl
 import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.data.SubscriptionRepositoryImpl
 import com.feedman.android.core.data.fake.FakeItemRepository
@@ -57,6 +59,17 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindFeedItemsRepository(impl: FeedItemsRepositoryImpl): FeedItemsRepository
+
+    /**
+     * スター一覧の実 API 用リポジトリ（Issue #46 Req 2 / 3 / NFR 2.3）。
+     *
+     * `GET /api/feeds/starred/items` を Pager データ層として独立に注入する。スター一覧画面
+     * （feature/starred）はこの interface のみに依存し、`Flow<PagingData<StarredItemSummary>>`
+     * を購読する。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindStarredItemsRepository(impl: StarredItemsRepositoryImpl): StarredItemsRepository
 
     /**
      * 記事詳細・状態更新リポジトリ（Issue #35 Req 1 / 2 / 3）。

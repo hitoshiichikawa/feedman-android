@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "01HSTAR000000000000000002A",
+      "feed_id": "01HFEED000000000000000002A",
+      "title": "スター記事 A（ページ 2）",
+      "link": "https://example.com/star-a2",
+      "summary": "スター一覧 2 ページ目の記事 A",
+      "published_at": "2026-06-09T09:00:00Z",
+      "is_date_estimated": false,
+      "is_read": false,
+      "is_starred": true,
+      "hatebu_count": 4,
+      "hatebu_fetched_at": "2026-06-09T10:00:00Z",
+      "feed_title": "Android Developers"
+    }
+  ],
+  "next_cursor": "2026-06-09T09:00:00Z:01HSTAR000000000000000002A",
+  "has_more": true
+}

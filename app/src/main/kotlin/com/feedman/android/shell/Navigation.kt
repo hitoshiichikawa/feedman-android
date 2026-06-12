@@ -13,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.feedman.android.core.ui.OpenLinkResult
 import com.feedman.android.feature.feed.FeedScreen
+import com.feedman.android.feature.starred.StarredScreen
 import com.feedman.android.feature.timeline.TimelineScreen
 
 /**
@@ -70,18 +71,15 @@ fun Navigation(
             )
         }
         composable(AppRoute.Starred.id) {
-            StarredRoutePlaceholder()
+            // Issue #46: スター一覧画面を起動。記事タップで AppShell 直下の
+            // ArticleDetailViewModel に open(itemId) を伝える（Req 4.1）。
+            StarredScreen(
+                onOpenItemDetail = { itemId -> onOpenItemDetail(itemId) },
+            )
         }
         composable(AppRoute.Search.id) {
             SearchRoutePlaceholder()
         }
-    }
-}
-
-@Composable
-private fun StarredRoutePlaceholder() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("starred")
     }
 }
 
