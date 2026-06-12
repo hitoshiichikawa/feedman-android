@@ -254,4 +254,123 @@ class SubscriptionRepositoryImplTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    // ===== Issue #41: resume / observeFeed =====
+
+    @Test
+    fun `Issue41 Req 3_5 resume で api subscriptions id resume を POST する`() = runTest {
+        // Arrange: refresh 用 + resume 用の 2 レスポンス
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(active))
+        val repo = newRepository()
+        repo.refresh()
+        server.takeRequest() // refresh 分の record を捨てる
+
+        // Act
+        repo.resume("01HGY8K9ZQ4N7TXVY1F8M9R3SU")
+
+        // Assert
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals(
+            "/api/subscriptions/01HGY8K9ZQ4N7TXVY1F8M9R3SU/resume",
+            recorded.requestUrl?.encodedPath,
+        )
+    }
+
+    @Test
+    fun `Issue41 Req 3_7 resume 成功で観測中の Subscription が active に更新される`() = runTest {
+        // Arrange: 1) refresh で error 状態の購読をリストに載せる
+        val errorJson = FixtureLoader.load("subscription_error.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$errorJson]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first().single()
+        assertEquals("error", before.feedStatus)
+
+        // 2) resume レスポンスとして active 状態を返す
+        val activeJson = errorJson
+            .replace("\"error\"", "\"active\"")
+            .replace("\"HTTP 503 Service Unavailable\"", "null")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(activeJson))
+
+        // Act
+        val returned = repo.resume(before.id)
+
+        // Assert: 戻り値 + 観測ストリーム双方が active に切り替わる
+        assertEquals("active", returned.feedStatus)
+        val afterList = repo.observeSubscriptions().first()
+        assertEquals(1, afterList.size)
+        assertEquals("active", afterList[0].feedStatus)
+    }
+
+    @Test
+    fun `Issue41 Req 3_8 resume 失敗時は例外を伝搬し購読リストを変えない`() = runTest {
+        // Arrange
+        val errorJson = FixtureLoader.load("subscription_error.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$errorJson]"))
+        val repo = newRepository()
+        repo.refresh()
+        val before = repo.observeSubscriptions().first().single()
+
+        // resume が 503 で失敗する
+        val errorBody = """
+            {
+              "error": {
+                "code": "UPSTREAM_ERROR",
+                "message": "再開に失敗しました。"
+              }
+            }
+        """.trimIndent()
+        server.enqueue(
+            MockResponse().setResponseCode(503)
+                .setHeader("Content-Type", "application/json")
+                .setBody(errorBody),
+        )
+
+        // Act / Assert: 例外が呼び出し元へ投げ返される
+        var thrown: Throwable? = null
+        try {
+            repo.resume(before.id)
+        } catch (e: Throwable) {
+            thrown = e
+        }
+        assertTrue("expected FeedmanException, got $thrown", thrown is FeedmanException)
+        // 購読リストは変わらない（error のまま）
+        val after = repo.observeSubscriptions().first().single()
+        assertEquals("error", after.feedStatus)
+    }
+
+    @Test
+    fun `Issue41 Req 4_1 observeFeed で feedId に一致する Subscription を取り出せる`() = runTest {
+        // Arrange: 複数フィードをロード
+        val active = FixtureLoader.load("subscription_active.json")
+        val errorJson = FixtureLoader.load("subscription_error.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active,$errorJson]"))
+        val repo = newRepository()
+        repo.refresh()
+
+        // Act: active 側の feedId で観測
+        val found = repo.observeFeed("01HGY8K9ZQ4N7TXVY1F8M9R3FE").first()
+
+        // Assert
+        assertEquals("Feedman Dev Blog", found?.feedTitle)
+        assertEquals("active", found?.feedStatus)
+    }
+
+    @Test
+    fun `Issue41 Req 4_3 observeFeed は未存在 feedId に対して null を流す`() = runTest {
+        // Arrange
+        val active = FixtureLoader.load("subscription_active.json")
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[$active]"))
+        val repo = newRepository()
+        repo.refresh()
+
+        // Act
+        val notFound = repo.observeFeed("does-not-exist").first()
+
+        // Assert
+        assertEquals(null, notFound)
+    }
 }

@@ -2,6 +2,8 @@ package com.feedman.android.core.data
 
 import com.feedman.android.core.model.Subscription
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /**
  * 購読フィードのデータソース境界（Issue #30 + Issue #39 / Req 1, 2, 3, 4 / NFR 1.2）。
@@ -60,4 +62,51 @@ interface SubscriptionRepository {
      * 並行呼び出しは実装側で in-flight 1 件に制限する（重複再取得の抑制）。
      */
     suspend fun refresh()
+
+    /**
+     * Issue #41 Req 4.1 / 4.2: 単一のフィードを feedId（`Subscription.feedId`）で
+     * 絞り込み観測する補助メソッド。フィード別画面（FeedScreen）はこのストリームから
+     * フィード名・status・error_message を取り出して警告バナーとタイトルを描画する。
+     *
+     * - [observeSubscriptions] と同じくセッションキャッシュに依存するため、購読開始時点で
+     *   即時に現在の値（一致する Subscription または `null`）を 1 度流す。
+     * - 一致する Subscription が見つからない場合は `null` を流す（Req 4.3 のフィード未存在
+     *   表示判定）。
+     * - 値はサーバ取得の更新（[refresh] / [resume] 等）に追従して再 emit される。
+     *
+     * 既定実装は [observeSubscriptions] を `map { firstOrNull }` で射影する形にしておくため、
+     * 既存の Fake / 実装は本メソッドを再実装しなくても契約を満たす（Req NFR 1.1 後方互換）。
+     */
+    fun observeFeed(feedId: String): Flow<Subscription?> =
+        observeSubscriptions().mapToSingleByFeedId(feedId)
+
+    /**
+     * Issue #41 Req 3.5 / 3.7 / 3.8: 停止 / エラー状態のフィードを再開する。
+     *
+     * SPEC §4.2 `POST /api/subscriptions/{id}/resume` を呼び出す。成功時は Subscription
+     * の最新スナップショットを内部状態へ反映し、[observeSubscriptions] / [observeFeed] が
+     * 新しい状態（active）を流す（Req 3.7）。失敗時は例外を呼び出し元へ投げ返す（UI 側で
+     * snackbar 表示するため。Req 3.8）。
+     *
+     * @param subscriptionId 対象 [com.feedman.android.core.model.Subscription.id]（パス上の
+     *   `{id}` に対応）。本メソッドは feed_id と subscription_id を取り違えないため、
+     *   呼び出し側が Subscription を観測してから `.id` を渡す前提とする。
+     * @return 再開後の最新 Subscription（active 化された状態）
+     */
+    suspend fun resume(subscriptionId: String): Subscription =
+        throw UnsupportedOperationException(
+            "SubscriptionRepository.resume はこの実装でサポートされていません",
+        )
 }
+
+/**
+ * `Flow<List<Subscription>>` から単一フィードを抽出するための内部ヘルパー
+ * （Issue #41 Req 4.1 / 4.3 / NFR 1.1）。
+ *
+ * `observeFeed(feedId)` の既定実装に使用される。`distinctUntilChanged` を併用することで、
+ * 一覧側の他フィード変更で再 emit されないようにする（NFR 1.1 応答性のため）。
+ */
+internal fun Flow<List<Subscription>>.mapToSingleByFeedId(
+    feedId: String,
+): Flow<Subscription?> =
+    this.map { list -> list.firstOrNull { it.feedId == feedId } }.distinctUntilChanged()

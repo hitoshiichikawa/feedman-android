@@ -113,4 +113,30 @@
     <!-- Issue #37 Req 3.3 / Req 4.1 / Req 4.2: タイムライン外部リンク起動失敗 / 不正 URL の
          snackbar 文言。詳細シートと文言は同一だが、将来的に画面別 UX を変える余地を残す。 -->
     <string name="timeline_open_link_failed">元記事を開けませんでした</string>
+
+    <!-- Issue #41: フィード別画面（FeedScreen）固有文言 -->
+    <!-- Req 2.1: フィルタタブ「すべて」 -->
+    <string name="feed_filter_all">すべて</string>
+    <!-- Req 2.1: フィルタタブ「未読」 -->
+    <string name="feed_filter_unread">未読</string>
+    <!-- Req 2.1: フィルタタブ「スター」 -->
+    <string name="feed_filter_starred">スター</string>
+    <!-- Req 1.4: 空状態タイトル（fm-screens.jsx FMEmpty title） -->
+    <string name="feed_empty_title">記事がありません</string>
+    <!-- Req 2.6: 空状態補助テキスト（フィルタ切替時の誘導 / fm-screens.jsx FMEmpty sub） -->
+    <string name="feed_empty_subtitle">フィルタを変えるか、引っ張って更新してください</string>
+    <!-- Req 4.3: フィード未存在エラーメッセージ -->
+    <string name="feed_not_found">フィードが見つかりません</string>
+    <!-- Req 3.2: 警告バナー停止アイコン a11y -->
+    <string name="feed_banner_icon_stopped">フィードは停止中</string>
+    <!-- Req 3.2: 警告バナーエラーアイコン a11y -->
+    <string name="feed_banner_icon_error">フィードでエラーが発生</string>
+    <!-- Req 3.3: error_message 欠落時の既定文言（stopped） -->
+    <string name="feed_banner_default_stopped_message">このフィードは停止中です。</string>
+    <!-- Req 3.3: error_message 欠落時の既定文言（error） -->
+    <string name="feed_banner_default_error_message">フィードの取得でエラーが発生しています。</string>
+    <!-- Req 3.5 / NFR 2.1: 「再開」ボタン文言 -->
+    <string name="feed_banner_resume_button">再開</string>
+    <!-- Req 3.7: 再開成功時の snackbar 文言 -->
+    <string name="feed_resume_succeeded">フィードを再開しました</string>
 </resources>
