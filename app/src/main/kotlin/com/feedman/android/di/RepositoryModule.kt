@@ -4,6 +4,8 @@ import com.feedman.android.core.data.CrossFeedRepository
 import com.feedman.android.core.data.CrossFeedRepositoryImpl
 import com.feedman.android.core.data.FeedItemsRepository
 import com.feedman.android.core.data.FeedItemsRepositoryImpl
+import com.feedman.android.core.data.FeedRegistrationRepository
+import com.feedman.android.core.data.FeedRegistrationRepositoryImpl
 import com.feedman.android.core.data.ItemDetailRepository
 import com.feedman.android.core.data.ItemDetailRepositoryImpl
 import com.feedman.android.core.data.ItemRepository
@@ -65,6 +67,18 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindItemDetailRepository(impl: ItemDetailRepositoryImpl): ItemDetailRepository
+
+    /**
+     * フィード登録リポジトリ（Issue #44 / Req 3.1 / Req 5.x）。
+     *
+     * `POST /api/feeds`（SPEC §4.2）の薄い委譲層。Fake 実装は v1 スコープでは不要のため、
+     * 単一実装で固定（mockMode 切替の対象外）。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindFeedRegistrationRepository(
+        impl: FeedRegistrationRepositoryImpl,
+    ): FeedRegistrationRepository
 
     companion object {
 
