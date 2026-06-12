@@ -1,5 +1,6 @@
 package com.feedman.android.core.data.fake
 
+import com.feedman.android.core.data.SubscriptionLoadState
 import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.model.Subscription
 import kotlinx.coroutines.flow.Flow
@@ -8,20 +9,41 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 表示確認用の [SubscriptionRepository] Fake 実装（Issue #30 / Req 5.2, 5.3）。
+ * 表示確認用の [SubscriptionRepository] Fake 実装（Issue #30 + Issue #39 / Req 3.1, 3.2, 3.4）。
  *
  * `design/mobile/fm-data.jsx` のモックフィード一覧を Android 側で再現したサンプルデータ
  * を返す。状態（active / stopped / error）・favicon（data URL / null）・未読件数（0 含む）の
  * 各バリエーションを最低 1 件ずつ含め、ドロワー UI の全分岐を視覚確認できるようにする。
  *
- * - Req 5.2: active / stopped / error の各状態を 1 件以上含む。
- * - Req 5.3: 購読開始時点で即座にリストを 1 度流す（`flowOf` の単発 emit で satisfy）。
- * - Req 1.5: リポジトリが返す順序＝表示順序。本リストの定義順がそのままドロワー表示順。
+ * - Issue #30 Req 5.2: active / stopped / error の各状態を 1 件以上含む。
+ * - Issue #30 Req 5.3: 購読開始時点で即座にリストを 1 度流す（`flowOf` の単発 emit で satisfy）。
+ * - Issue #30 Req 1.5: リポジトリが返す順序＝表示順序。本リストの定義順がそのままドロワー表示順。
+ * - Issue #39 Req 3.1, 3.2: `AppConfig.mockMode = true` のときに DI から本実装が解決される。
+ *   `GET /api/subscriptions` は呼び出さない（Retrofit に依存しない）。
+ * - Issue #39 Req 3.4: 公開インターフェースは実 API 実装と同一を保つ（[observeLoadState] /
+ *   [refresh] を追加実装するが、Fake では取得失敗が起きないため [SubscriptionLoadState.Success]
+ *   のみ emit し、[refresh] は no-op とする）。
  */
 @Singleton
 class FakeSubscriptionRepository @Inject constructor() : SubscriptionRepository {
 
     override fun observeSubscriptions(): Flow<List<Subscription>> = flowOf(MOCK_SUBSCRIPTIONS)
+
+    /**
+     * Fake では取得失敗が起きないため、常に [SubscriptionLoadState.Success] のみを emit する
+     * （Issue #39 Req 3.4: 公開 IF 互換）。
+     */
+    override fun observeLoadState(): Flow<SubscriptionLoadState> =
+        flowOf(SubscriptionLoadState.Success)
+
+    /**
+     * Fake では再取得しても結果が変わらないため no-op（Issue #39 Req 3.2: API を呼ばない）。
+     * suspend 契約は維持し、呼び出し側の `viewModelScope.launch { repo.refresh() }` がそのまま
+     * 動くようにする。
+     */
+    override suspend fun refresh() {
+        // no-op: モックデータは静的
+    }
 
     companion object {
         // 1x1 PNG（青）の data URL。`design/SPEC.md` §4.4 に従い `data:<mime>;base64,...` 形式。

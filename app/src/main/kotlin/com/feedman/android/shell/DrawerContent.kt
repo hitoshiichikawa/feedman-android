@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +29,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -42,6 +45,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.feedman.android.R
 import com.feedman.android.core.designsystem.feedmanDimens
+import com.feedman.android.core.designsystem.feedmanColors
 import com.feedman.android.core.ui.Favicon
 
 /**
@@ -84,29 +88,36 @@ fun DrawerContent(
     DrawerContentStateless(
         currentRouteId = currentRouteId,
         rows = uiState.rows,
+        feedSection = uiState.feedSection,
         onSelectMainItem = onSelectMainItem,
         onSelectFooterItem = onSelectFooterItem,
         onSelectFeed = onSelectFeed,
         onSelectFeedSettings = onSelectFeedSettings,
         onAccountAreaTap = onAccountAreaTap,
         onAddFeedTap = onAddFeedTap,
+        onRetryLoadFeeds = viewModel::retryLoadSubscriptions,
         modifier = modifier,
     )
 }
 
 /**
  * Composable 起動なしのプレビュー / テストから利用するための stateless 実体（NFR 3.2）。
+ *
+ * Issue #39 で [feedSection] / [onRetryLoadFeeds] を追加し、フィードセクション内のみで
+ * Loading / Error 表示を切替える（NFR 3.1: シェル全体は壊さない）。
  */
 @Composable
 internal fun DrawerContentStateless(
     currentRouteId: String,
     rows: List<DrawerFeedRow>,
+    feedSection: FeedSectionState,
     onSelectMainItem: (DrawerMainItem) -> Unit,
     onSelectFooterItem: (DrawerFooterItem) -> Unit,
     onSelectFeed: (DrawerFeedRow) -> Unit,
     onSelectFeedSettings: (DrawerFeedRow) -> Unit,
     onAccountAreaTap: () -> Unit,
     onAddFeedTap: () -> Unit,
+    onRetryLoadFeeds: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ModalDrawerSheet(modifier = modifier.fillMaxHeight()) {
@@ -124,13 +135,15 @@ internal fun DrawerContentStateless(
                 )
             }
 
-            // フィード一覧（#30 Req 1.1, 1.2, 1.3, 1.5 / #31 Req 5.1）
+            // フィード一覧（#30 Req 1.1, 1.2, 1.3, 1.5 / #31 Req 5.1 / #39 Req 2.x）
             Spacer(modifier = Modifier.padding(top = 8.dp))
             DrawerFeedsSection(
                 rows = rows,
+                feedSection = feedSection,
                 onSelectFeed = onSelectFeed,
                 onSelectFeedSettings = onSelectFeedSettings,
                 onAddFeedTap = onAddFeedTap,
+                onRetryLoadFeeds = onRetryLoadFeeds,
             )
 
             Spacer(modifier = Modifier.padding(top = 8.dp))
@@ -191,19 +204,25 @@ private fun DrawerHeader(onAccountAreaTap: () -> Unit) {
 }
 
 /**
- * ドロワーのフィード一覧セクション（Issue #30 / Req 1.1, 1.3, 1.5 / Issue #31 Req 5.1）。
+ * ドロワーのフィード一覧セクション
+ * （Issue #30 / Req 1.1, 1.3, 1.5 / Issue #31 Req 5.1 / Issue #39 Req 2.1, 2.2, 2.3, 2.5）。
  *
- * - リポジトリが返した順序のまま行を並べる（Req 1.5）
- * - rows が空のときはフィード行を 1 件も描画しない（Req 1.3 / セクション見出しは残す）
+ * - リポジトリが返した順序のまま行を並べる（Issue #30 Req 1.5）
+ * - rows が空のときはフィード行を 1 件も描画しない（Issue #30 Req 1.3）
  * - セクション見出し（「フィード」）の横に + ボタンを配置し、フィード登録シートを起動する
  *   入口とする（Issue #31 Req 5.1, 5.5）
+ * - Issue #39: [feedSection] が `Loading` のとき初回ロードインジケータを、`Error` のとき
+ *   エラー文言 + 再試行ボタンを **本セクション内のみ** に表示する。メイン項目・フッタ・
+ *   トップバーには影響しない（Req 2.3, NFR 3.1）
  */
 @Composable
 private fun DrawerFeedsSection(
     rows: List<DrawerFeedRow>,
+    feedSection: FeedSectionState,
     onSelectFeed: (DrawerFeedRow) -> Unit,
     onSelectFeedSettings: (DrawerFeedRow) -> Unit,
     onAddFeedTap: () -> Unit,
+    onRetryLoadFeeds: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -233,11 +252,83 @@ private fun DrawerFeedsSection(
                 )
             }
         }
+        // Issue #39 Req 2.5: 初回ロード中は本セクション内にロード表示を出す（フィード行は空）
+        when (feedSection) {
+            FeedSectionState.Loading -> DrawerFeedSectionLoading()
+            is FeedSectionState.Error -> DrawerFeedSectionError(
+                message = feedSection.message,
+                onRetry = onRetryLoadFeeds,
+            )
+            FeedSectionState.Idle, FeedSectionState.Success -> Unit
+        }
+        // rows は feedSection の状態に関わらず描画する（取得失敗時も直近 rows を残す方針）
         rows.forEach { row ->
             DrawerFeedRowItem(
                 row = row,
                 onSelectFeed = onSelectFeed,
                 onSelectFeedSettings = onSelectFeedSettings,
+            )
+        }
+    }
+}
+
+/**
+ * Issue #39 Req 2.5: フィードセクション内ロード表示。
+ *
+ * `core/ui/StateViews.kt` の `LoadingFullScreen` は画面全体を専有するため、ドロワー内
+ * セクションでは独自のコンパクトなインジケータ（24dp + 縦 16dp パディング）を描画する。
+ * a11y 文言は `state_loading_description` を再利用する。
+ */
+@Composable
+private fun DrawerFeedSectionLoading() {
+    val description = stringResource(R.string.state_loading_description)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(24.dp),
+            strokeWidth = 2.dp,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/**
+ * Issue #39 Req 2.1, 2.2, 2.6: フィードセクション内エラー + 再試行表示。
+ *
+ * - サーバー由来の `error.message`（フォールバック含む）を [message] でそのまま提示
+ * - 再試行ボタンタップで [onRetry] を発火（ViewModel の `retryLoadSubscriptions()`）
+ * - 表示はドロワーのフィードセクション領域内のみ。メイン項目・フッタ・トップバーは継続表示
+ *   （Req 2.3, NFR 3.1）
+ */
+@Composable
+private fun DrawerFeedSectionError(message: String, onRetry: () -> Unit) {
+    val feedman = MaterialTheme.feedmanColors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = feedman.mutedFg,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = onRetry,
+            modifier = Modifier.sizeIn(minWidth = 64.dp, minHeight = 44.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.state_error_retry),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }
