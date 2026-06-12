@@ -97,6 +97,31 @@ interface SubscriptionRepository {
         throw UnsupportedOperationException(
             "SubscriptionRepository.resume はこの実装でサポートされていません",
         )
+
+    /**
+     * Issue #42 Req 1.1 / 2.1 / 2.3: 当該フィードの手動フェッチを要求する。
+     *
+     * SPEC §4.2 `POST /api/subscriptions/{id}/fetch` を呼び出す。成功時は当該購読の
+     * 最新スナップショット（unread_count 等を含む）を返し、内部状態へ反映する。これにより
+     * [observeSubscriptions] / [observeFeed] を購読中の UI（ドロワー / FeedScreen）が新しい
+     * unread バッジ等を観測する（Req 2.3 ドロワー未読バッジ反映）。
+     *
+     * 失敗時は [com.feedman.android.core.network.FeedmanException] をそのまま呼び出し元へ
+     * 投げ返す（UI 側で snackbar 表示する。Req 3.1 / 4.1）。クールダウン応答（429 /
+     * `FEED_COOLDOWN`）は code = `FEED_COOLDOWN`・retryAfterSeconds を含む形で観測される
+     * （Req 3.1 / 3.2 / 3.3）。
+     *
+     * 既定実装は [UnsupportedOperationException] を投げる（Fake 実装が選択的に override
+     * できるようにするための互換性確保）。
+     *
+     * @param subscriptionId 対象 [com.feedman.android.core.model.Subscription.id]（パス上の
+     *   `{id}` に対応）
+     * @return フェッチ後の最新 Subscription
+     */
+    suspend fun fetch(subscriptionId: String): Subscription =
+        throw UnsupportedOperationException(
+            "SubscriptionRepository.fetch はこの実装でサポートされていません",
+        )
 }
 
 /**

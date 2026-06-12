@@ -121,6 +121,32 @@ class SubscriptionRepositoryImpl @Inject constructor(
     }
 
     /**
+     * Issue #42 Req 1.1 / 2.1 / 2.3 / 3.x / 4.x: 手動フェッチを実行する。
+     *
+     * `POST /api/subscriptions/{id}/fetch`（SPEC §4.2）を呼び出し、成功時は返ってきた
+     * Subscription を内部の `_subscriptions` の該当 entry へ置換して反映する。これにより
+     * [observeSubscriptions] を購読中のドロワーが新しい unread_count バッジを観測する
+     * （Req 2.3）。
+     *
+     * クールダウン応答（HTTP 429 + `code = FEED_COOLDOWN`）や、その他の非 2xx 応答・
+     * I/O 失敗は network 層で [com.feedman.android.core.network.FeedmanException] に変換
+     * 済みのため、本実装は変換を行わず例外を呼び出し元へ透過する（Req 3.1〜3.3 / 4.1〜4.3）。
+     * 本メソッドは [refreshMutex] でガードしないため、refresh と並行に呼ばれても安全。
+     *
+     * @param subscriptionId 対象 [Subscription.id]
+     * @return 手動フェッチ後の最新 Subscription
+     */
+    override suspend fun fetch(subscriptionId: String): Subscription {
+        val updated = api.fetchSubscription(subscriptionId)
+        _subscriptions.update { current ->
+            current.map { existing ->
+                if (existing.id == subscriptionId) updated else existing
+            }
+        }
+        return updated
+    }
+
+    /**
      * 例外を [SubscriptionLoadState.Error] に変換する（Req 2.1, 2.6, 4.3）。
      *
      * [FeedmanException] の場合は code / message をそのまま転写し、それ以外の予期しない

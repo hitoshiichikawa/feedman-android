@@ -18,12 +18,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,6 +79,7 @@ import java.time.Clock
  * @param onOpenItemDetail 記事カードタップ時に詳細シートを開くコールバック（Req 1.6）
  * @param onOpenExternalLink 外部リンク起動コールバック（Issue #37 / 結果を OpenLinkResult で返す）
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
     modifier: Modifier = Modifier,
@@ -87,6 +91,8 @@ fun FeedScreen(
     val banner by viewModel.banner.collectAsStateWithLifecycle()
     val currentFilter by viewModel.currentFilter.collectAsStateWithLifecycle()
     val subscription by viewModel.subscription.collectAsStateWithLifecycle()
+    // Issue #42 Req 1.2: 手動フェッチ進行中フラグ。PullToRefreshBox の isRefreshing に渡す。
+    val fetchInProgress by viewModel.fetchInProgress.collectAsStateWithLifecycle()
 
     val clock = remember { Clock.systemDefaultZone() }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -96,8 +102,12 @@ fun FeedScreen(
     val markReadFailedMessage = stringResource(id = R.string.article_detail_mark_read_failed)
     val starUpdateFailedMessage = stringResource(id = R.string.article_detail_star_update_failed)
     val openLinkFailedMessage = stringResource(id = R.string.timeline_open_link_failed)
+    val cooldownNoSecondsMessage = stringResource(id = R.string.feed_fetch_cooldown_no_seconds)
 
-    // Req 3.7 / 3.8 / Issue #37 流用: 再開成功 / 失敗 / 外部リンク失敗を snackbar 通知
+    // 文言テンプレ参照（Issue #42 Req 3.2: 残り秒数 format）
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Req 3.7 / 3.8 / Issue #37 / Issue #42 Req 2.1 / 3.1 / 4.1: イベントを snackbar 通知
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             val message = when (event) {
@@ -108,8 +118,27 @@ fun FeedScreen(
                 }
                 is FeedScreenEvent.ResumeFailed -> event.message
                 FeedScreenEvent.OpenLinkFailed -> openLinkFailedMessage
+                FeedScreenEvent.FetchSucceeded -> {
+                    // Issue #42 Req 2.1: 成功で一覧 refresh（Paging invalidate）
+                    pagingItems.refresh()
+                    // 成功時は snackbar 表示しない（要件には明示要求なし。UX を簡潔に保つ）
+                    null
+                }
+                is FeedScreenEvent.FetchCooldown -> {
+                    val seconds = event.retryAfterSeconds
+                    if (seconds != null) {
+                        // Req 3.2: 残り秒数を含む文言
+                        context.getString(R.string.feed_fetch_cooldown_with_seconds, seconds)
+                    } else {
+                        // Req 3.3: 残り秒数フォールバック文言
+                        cooldownNoSecondsMessage
+                    }
+                }
+                is FeedScreenEvent.FetchFailed -> event.message
             }
-            FeedmanSnackbar.show(snackbarHostState, message)
+            if (message != null) {
+                FeedmanSnackbar.show(snackbarHostState, message)
+            }
         }
     }
 
@@ -128,6 +157,11 @@ fun FeedScreen(
     // LazyPagingItems が新しい PagingData を受け取ると LazyColumn の itemCount が 0 から再構築
     // されるため、スクロール位置は自然に先頭へ戻る。本 Composable では追加の scrollTo は不要。
 
+    // Issue #42 Req 1.1 / 1.2 / 1.3 / NFR 2.1: Material3 PullToRefreshBox で一覧領域を包む。
+    // 警告バナー / フィルタタブ自体はジェスチャ対象外（本体は記事一覧）にするため、
+    // PullToRefreshBox は一覧領域のみをラップする。
+    val pullState = rememberPullToRefreshState()
+
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             // 1. 警告バナー
@@ -143,41 +177,48 @@ fun FeedScreen(
                 current = currentFilter,
                 onSelect = { viewModel.selectFilter(it) },
             )
-            // 3. 記事一覧 / 状態表示
-            // Req 4.3: subscription が null かつフィードロード完了済みのときフィード未存在として
-            // 表示する。判定は「subscription Flow が StateFlow から取得を完了し、null のまま」と
-            // するが、画面初期描画の null と区別が付かないため、本実装では一覧の loadState を
-            // 併用する。RefreshLoading or RefreshError ならまだ判定保留、Empty/NotLoading で
-            // subscription が null なら未存在と判定する。
-            FeedScreenListContent(
-                pagingItems = pagingItems,
-                clock = clock,
-                subscriptionLoaded = subscription != null,
-                snackbarHostState = snackbarHostState,
-                onOpenItemDetail = onOpenItemDetail,
-                onExternalLinkClicked = { itemId, link, currentIsRead ->
-                    when (onOpenExternalLink(link)) {
-                        OpenLinkResult.OpenedWithCustomTabs,
-                        OpenLinkResult.OpenedWithFallback -> {
-                            viewModel.markReadOnExternalOpen(
-                                itemId = itemId,
-                                currentIsRead = currentIsRead,
-                            )
+            // 3. 記事一覧 / 状態表示（Pull-to-refresh でラップ）
+            PullToRefreshBox(
+                isRefreshing = fetchInProgress,
+                onRefresh = { viewModel.onPullToRefresh() },
+                modifier = Modifier.fillMaxSize(),
+                state = pullState,
+            ) {
+                // Req 4.3: subscription が null かつフィードロード完了済みのときフィード未存在として
+                // 表示する。判定は「subscription Flow が StateFlow から取得を完了し、null のまま」と
+                // するが、画面初期描画の null と区別が付かないため、本実装では一覧の loadState を
+                // 併用する。RefreshLoading or RefreshError ならまだ判定保留、Empty/NotLoading で
+                // subscription が null なら未存在と判定する。
+                FeedScreenListContent(
+                    pagingItems = pagingItems,
+                    clock = clock,
+                    subscriptionLoaded = subscription != null,
+                    snackbarHostState = snackbarHostState,
+                    onOpenItemDetail = onOpenItemDetail,
+                    onExternalLinkClicked = { itemId, link, currentIsRead ->
+                        when (onOpenExternalLink(link)) {
+                            OpenLinkResult.OpenedWithCustomTabs,
+                            OpenLinkResult.OpenedWithFallback -> {
+                                viewModel.markReadOnExternalOpen(
+                                    itemId = itemId,
+                                    currentIsRead = currentIsRead,
+                                )
+                            }
+                            is OpenLinkResult.InvalidUrl,
+                            OpenLinkResult.NoAppToHandle -> {
+                                viewModel.notifyExternalLinkFailed()
+                            }
                         }
-                        is OpenLinkResult.InvalidUrl,
-                        OpenLinkResult.NoAppToHandle -> {
-                            viewModel.notifyExternalLinkFailed()
-                        }
-                    }
-                },
-                onStarToggle = { itemId, newState, baseline ->
-                    viewModel.toggleStar(
-                        itemId = itemId,
-                        newState = newState,
-                        baselineStarred = baseline,
-                    )
-                },
-            )
+                    },
+                    onStarToggle = { itemId, newState, baseline ->
+                        viewModel.toggleStar(
+                            itemId = itemId,
+                            newState = newState,
+                            baselineStarred = baseline,
+                        )
+                    },
+                )
+            }
         }
         SnackbarHost(
             hostState = snackbarHostState,

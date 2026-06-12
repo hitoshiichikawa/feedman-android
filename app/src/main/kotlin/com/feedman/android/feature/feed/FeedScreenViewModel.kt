@@ -104,6 +104,14 @@ class FeedScreenViewModel @Inject constructor(
 
     private val _resumeInProgress = MutableStateFlow(false)
 
+    private val _fetchInProgress = MutableStateFlow(false)
+
+    /**
+     * Issue #42 Req 1.2 / 1.4: 手動フェッチ進行中フラグ。UI 側で PullToRefreshBox の
+     * isRefreshing 表示と重複起動抑止に使う。
+     */
+    val fetchInProgress: StateFlow<Boolean> = _fetchInProgress.asStateFlow()
+
     /**
      * Req 3.1〜3.4 / 3.6: 警告バナーの表示状態。[subscription] と [resumeInProgress] から
      * [resolveBanner] で純粋関数的に決定する。
@@ -222,6 +230,63 @@ class FeedScreenViewModel @Inject constructor(
                 )
             } finally {
                 _resumeInProgress.value = false
+            }
+        }
+    }
+
+    /**
+     * Issue #42 Req 1.1 / 1.2 / 1.4 / 2.1 / 3.x / 4.x: Pull-to-refresh ジェスチャ完了時の
+     * ハンドラ。
+     *
+     * - 進行中フラグが true なら **早期 return** で重複起動を抑止（Req 1.4）
+     * - `subscription.value == null` のとき（フィード未存在）はフェッチ要求自体を発行しない
+     * - 進行中フラグを true に立てて [SubscriptionRepository.fetch] を呼ぶ
+     * - 成功時: [FeedScreenEvent.FetchSucceeded] を流す（UI 側は Paging refresh を起動 /
+     *   Req 2.1）。Subscription の最新化は Repository 内部で `_subscriptions` 更新済み
+     *   なのでドロワー未読バッジは自動反映される（Req 2.3）。
+     * - クールダウン（code = `FEED_COOLDOWN`）: [FeedScreenEvent.FetchCooldown] を
+     *   `retryAfterSeconds` 付きで流す。UI 側で残り秒数の有無による文言切替を行う
+     *   （Req 3.1 / 3.2 / 3.3）。
+     * - その他失敗: [FeedScreenEvent.FetchFailed] を流す（Req 4.1〜4.3）。`code` が
+     *   `NETWORK_ERROR` のときは [FeedmanException.FALLBACK_NETWORK_MESSAGE] を採用する
+     *   （Req 4.3）。
+     * - finally で進行中フラグを下ろす（NFR 1.2: 応答受領後 500ms 以内に終了状態へ）
+     */
+    fun onPullToRefresh() {
+        if (_fetchInProgress.value) return
+        val currentSub = subscription.value ?: return
+        _fetchInProgress.value = true
+        viewModelScope.launch {
+            try {
+                subscriptionRepository.fetch(currentSub.id)
+                _events.emit(FeedScreenEvent.FetchSucceeded)
+            } catch (e: FeedmanException) {
+                val event = when (e.code) {
+                    FeedmanException.CODE_FEED_COOLDOWN -> FeedScreenEvent.FetchCooldown(
+                        retryAfterSeconds = e.retryAfterSeconds,
+                    )
+                    FeedmanException.CODE_NETWORK_ERROR -> FeedScreenEvent.FetchFailed(
+                        message = e.errorMessage.ifBlank {
+                            FeedmanException.FALLBACK_NETWORK_MESSAGE
+                        },
+                    )
+                    else -> FeedScreenEvent.FetchFailed(
+                        message = e.errorMessage.ifBlank {
+                            FeedmanException.FALLBACK_UNKNOWN_MESSAGE
+                        },
+                    )
+                }
+                _events.emit(event)
+            } catch (e: Exception) {
+                // 想定外の例外も silent fail させない。
+                _events.emit(
+                    FeedScreenEvent.FetchFailed(
+                        message = e.message?.takeIf { it.isNotBlank() }
+                            ?: FeedmanException.FALLBACK_UNKNOWN_MESSAGE,
+                    ),
+                )
+            } finally {
+                _fetchInProgress.value = false
             }
         }
     }
