@@ -15,6 +15,8 @@ import com.feedman.android.core.data.StarredItemsRepository
 import com.feedman.android.core.data.StarredItemsRepositoryImpl
 import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.data.SubscriptionRepositoryImpl
+import com.feedman.android.core.data.UserRepository
+import com.feedman.android.core.data.UserRepositoryImpl
 import com.feedman.android.core.data.fake.FakeItemRepository
 import com.feedman.android.core.data.fake.FakeSubscriptionRepository
 import com.feedman.android.core.model.AppConfig
@@ -106,6 +108,17 @@ abstract class RepositoryModule {
     abstract fun bindFeedRegistrationRepository(
         impl: FeedRegistrationRepositoryImpl,
     ): FeedRegistrationRepository
+
+    /**
+     * 現在ユーザー取得リポジトリ（Issue #49 Req 1.2 / 2.1 / 4.1 / 5.1）。
+     *
+     * `GET /auth/me`（SPEC §4.2）の薄い委譲層。アカウントシート（feature/account）が
+     * 現在ログイン中ユーザーの email を表示するために使う。Fake 実装は v1 スコープでは
+     * 不要のため単一実装で固定。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindUserRepository(impl: UserRepositoryImpl): UserRepository
 
     companion object {
 
