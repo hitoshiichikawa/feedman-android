@@ -16,6 +16,11 @@ import org.junit.Test
  */
 class SearchCardModelMapperTest {
 
+    private companion object {
+        /** strings.xml `search_published_at_unknown` 相当のテスト用ダミー文字列。 */
+        const val UNKNOWN_LABEL: String = "日時不明"
+    }
+
     private fun newHit(
         id: String = "hit-1",
         feedId: String = "feed-1",
@@ -55,7 +60,7 @@ class SearchCardModelMapperTest {
         )
 
         // Act
-        val card = SearchCardModelMapper.toCardModel(hit)
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
 
         // Assert
         assertEquals("Req 4.2: feed_title をソース表示に", "Android Developers", card.feedTitle)
@@ -74,7 +79,7 @@ class SearchCardModelMapperTest {
         val hit = newHit(faviconUrl = null)
 
         // Act
-        val card = SearchCardModelMapper.toCardModel(hit)
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
 
         // Assert
         assertNull(
@@ -91,7 +96,7 @@ class SearchCardModelMapperTest {
         val hit = newHit(publishedAt = "2026-06-11T07:00:00Z")
 
         // Act
-        val card = SearchCardModelMapper.toCardModel(hit)
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
 
         // Assert
         assertEquals(
@@ -104,18 +109,38 @@ class SearchCardModelMapperTest {
     // ---- Req 4.6: published_at が null のとき不明日時を示す代替表現に正規化 ---
 
     @Test
-    fun `toCardModel normalises null published_at to UNKNOWN_PUBLISHED_AT`() {
+    fun `toCardModel normalises null published_at to UNKNOWN_PUBLISHED_AT and sets override`() {
         // Arrange
         val hit = newHit(publishedAt = null)
 
         // Act
-        val card = SearchCardModelMapper.toCardModel(hit)
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
 
         // Assert
         assertEquals(
-            "Req 4.6: published_at が null のとき UNKNOWN_PUBLISHED_AT に正規化し、描画側 fallback に委ねる",
+            "Req 4.6: published_at が null のとき publishedAtIso は UNKNOWN_PUBLISHED_AT に正規化",
             SearchCardModelMapper.UNKNOWN_PUBLISHED_AT,
             card.publishedAtIso,
+        )
+        assertEquals(
+            "Req 4.6: relativeTimeOverride に unknownLabel が入り、描画側で RelativeTimeFormatter を呼ばずに本文字列を表示する",
+            UNKNOWN_LABEL,
+            card.relativeTimeOverride,
+        )
+    }
+
+    @Test
+    fun `toCardModel keeps relativeTimeOverride null when published_at is non-null`() {
+        // Arrange
+        val hit = newHit(publishedAt = "2026-06-11T07:00:00Z")
+
+        // Act
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
+
+        // Assert
+        assertNull(
+            "Req 4.5: published_at が非 null のとき override は null（既存の相対日時計算経路に乗る）",
+            card.relativeTimeOverride,
         )
     }
 
@@ -127,7 +152,7 @@ class SearchCardModelMapperTest {
         val hit = newHit(hatebuCount = 42)
 
         // Act
-        val card = SearchCardModelMapper.toCardModel(hit)
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
 
         // Assert
         assertEquals("Req 4.7: hatebu_count をそのまま伝達", 42, card.hatebuCount)
@@ -152,7 +177,7 @@ class SearchCardModelMapperTest {
         )
 
         // Act
-        val card = SearchCardModelMapper.toCardModel(hit)
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
 
         // Assert
         assertEquals("id-99", card.id)
@@ -174,7 +199,7 @@ class SearchCardModelMapperTest {
         )
 
         // Act
-        val card = SearchCardModelMapper.toCardModel(hit)
+        val card = SearchCardModelMapper.toCardModel(hit, unknownLabel = UNKNOWN_LABEL)
 
         // Assert
         assertEquals("2026-06-11T05:00:00Z", card.publishedAtIso)

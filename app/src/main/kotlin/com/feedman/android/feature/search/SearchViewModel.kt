@@ -4,9 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
-import androidx.paging.map
 import com.feedman.android.core.data.SearchRepository
-import com.feedman.android.core.ui.ArticleCardModel
+import com.feedman.android.core.model.ItemSearchHit
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 /**
@@ -60,23 +58,26 @@ class SearchViewModel @Inject constructor(
     val submittedQuery: StateFlow<String?> = _submittedQuery.asStateFlow()
 
     /**
-     * カード描画用 PagingData の Flow。
+     * 検索ヒット PagingData の Flow（Req 3.3 / 5.4）。
      *
      * [submittedQuery] が `null` のときは [emptyFlow]（Req 2.1 / 3.2: サーバー呼び出しなし）、
-     * 非 null のときは [SearchRepository.pagingData] で新しい Pager を生成しつつ
-     * [SearchCardModelMapper] で [ArticleCardModel] に射影する。Pager 出力は
-     * `cachedIn(viewModelScope)` で再コンポジション間のキャッシュを保持する。
+     * 非 null のときは [SearchRepository.pagingData] が返す `Flow<PagingData<ItemSearchHit>>`
+     * を流す。Pager 出力は `cachedIn(viewModelScope)` で再コンポジション間のキャッシュを保持する。
      *
      * `flatMapLatest` を使うことで、新しい [submittedQuery] が来たタイミングで前回の購読を
      * 破棄し、新しいキーワードで先頭ページから取得を開始する（Req 5.4）。
+     *
+     * 描画側（[SearchScreen]）が [SearchCardModelMapper.toCardModel] を `paging.map { ... }`
+     * で適用する。stringResource（`search_published_at_unknown`）を Composable スコープで
+     * 解決して mapper に渡せる構造とすることで、ViewModel が Android 文字列リソースに
+     * 直接依存しない（テスト容易性 / 言語非依存）。
      */
-    val cardPagingData: Flow<PagingData<ArticleCardModel>> =
+    val resultsPaging: Flow<PagingData<ItemSearchHit>> =
         submittedQuery.flatMapLatest { query ->
             if (query == null) {
                 emptyFlow()
             } else {
                 searchRepository.pagingData(query)
-                    .map { paging -> paging.map(SearchCardModelMapper::toCardModel) }
             }
         }.cachedIn(viewModelScope)
 

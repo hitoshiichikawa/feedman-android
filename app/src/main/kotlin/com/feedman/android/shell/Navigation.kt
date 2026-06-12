@@ -1,10 +1,6 @@
 package com.feedman.android.shell
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -13,6 +9,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.feedman.android.core.ui.OpenLinkResult
 import com.feedman.android.feature.feed.FeedScreen
+import com.feedman.android.feature.search.SearchScreen
 import com.feedman.android.feature.starred.StarredScreen
 import com.feedman.android.feature.timeline.TimelineScreen
 
@@ -78,14 +75,13 @@ fun Navigation(
             )
         }
         composable(AppRoute.Search.id) {
-            SearchRoutePlaceholder()
+            // Issue #47: 横断検索画面を起動。記事タップは v1 スコープ外（Req 7.3 / #48 で実装）
+            // のため、Navigation 側からは詳細シート起動コールバックを「設定はするが no-op に
+            // 倒しても動く」形で渡す（既存 onOpenItemDetail と同じ AppShell 配線を流用しても
+            // 良いが、本 Issue では明示的に no-op にして scope 境界を分かりやすくする）。
+            SearchScreen(
+                onOpenItemDetail = { /* Req 7.3 / #48 で実装。本 Issue では no-op */ },
+            )
         }
-    }
-}
-
-@Composable
-private fun SearchRoutePlaceholder() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("search")
     }
 }

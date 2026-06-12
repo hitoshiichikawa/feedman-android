@@ -81,7 +81,7 @@ class SearchViewModelTest {
         val vm = SearchViewModel(repo)
 
         // Act
-        vm.cardPagingData.test {
+        vm.resultsPaging.test {
             vm.onQueryChanged("kotlin")
             // queryInput 変更だけでは新しい Pager は流れない（空クエリ＝null）
             assertEquals("kotlin", vm.queryInput.value)
@@ -108,7 +108,7 @@ class SearchViewModelTest {
         val vm = SearchViewModel(repo)
 
         // Act
-        vm.cardPagingData.test {
+        vm.resultsPaging.test {
             vm.onQueryChanged("   ")
             vm.submit()
             cancelAndIgnoreRemainingEvents()
@@ -131,7 +131,7 @@ class SearchViewModelTest {
         val vm = SearchViewModel(repo)
 
         // Act
-        vm.cardPagingData.test {
+        vm.resultsPaging.test {
             vm.onQueryChanged("  kotlin  ")
             vm.submit()
             // cardPagingData は flatMapLatest + cachedIn で起動する。最低 1 件 emit する。
@@ -157,7 +157,7 @@ class SearchViewModelTest {
         val vm = SearchViewModel(repo)
 
         // Act
-        vm.cardPagingData.test {
+        vm.resultsPaging.test {
             vm.onQueryChanged("kotlin")
             vm.submit()
             awaitItem()
@@ -184,7 +184,7 @@ class SearchViewModelTest {
         val vm = SearchViewModel(repo)
 
         // Act
-        vm.cardPagingData.test {
+        vm.resultsPaging.test {
             vm.selectSuggestion("Kubernetes")
             awaitItem()
             cancelAndIgnoreRemainingEvents()
@@ -212,7 +212,7 @@ class SearchViewModelTest {
         val vm = SearchViewModel(repo)
 
         // Act: 1 回検索を確定してから clear
-        vm.cardPagingData.test {
+        vm.resultsPaging.test {
             vm.onQueryChanged("kotlin")
             vm.submit()
             awaitItem()
