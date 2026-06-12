@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "01HSTAR000000000000000003A",
+      "feed_id": "01HFEED000000000000000003A",
+      "title": "スター記事 終端ページ",
+      "link": "https://example.com/star-last",
+      "summary": "終端ページのスター記事",
+      "published_at": "2026-05-01T00:00:00Z",
+      "is_date_estimated": false,
+      "is_read": true,
+      "is_starred": true,
+      "hatebu_count": 1,
+      "hatebu_fetched_at": null,
+      "feed_title": "Compose Tips"
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}
