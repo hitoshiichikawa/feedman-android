@@ -41,8 +41,10 @@ import com.feedman.android.core.auth.SessionStateProvider
 import com.feedman.android.core.designsystem.ThemeMode
 import com.feedman.android.core.designsystem.ThemeModeRepository
 import com.feedman.android.core.ui.FeedmanSheet
+import com.feedman.android.core.ui.LinkOpener
 import com.feedman.android.feature.articledetail.ArticleDetailSheet
 import com.feedman.android.feature.articledetail.ArticleDetailViewModel
+import androidx.compose.ui.platform.LocalContext
 import com.feedman.android.feature.login.LoginPlaceholderScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -215,16 +217,23 @@ private fun LoggedInShell() {
             // ArticleDetailViewModel は LoggedInShell のスコープで 1 つだけ保持し、
             // 全ルートから同じインスタンスへ open(id) を依頼する（シェル単位の起動点）。
             val articleDetailViewModel: ArticleDetailViewModel = hiltViewModel()
+            // Issue #37 Req 1.1 / 2.1: 詳細シート・タイムラインの両方で共通の LinkOpener を
+            // 用いる。Context は Activity/Application どちらでも startActivity 可能なので
+            // `LocalContext.current` をそのまま渡す（Composable スコープに閉じる）。
+            val context = LocalContext.current
+            val linkOpener = viewModel.linkOpener
             Navigation(
                 navController = navController,
                 onOpenItemDetail = { itemId -> articleDetailViewModel.open(itemId) },
+                onOpenExternalLink = { url -> linkOpener.open(context, url) },
                 modifier = Modifier.padding(padding),
             )
             // Issue #36 Req 1.1, 1.4, 1.5: 詳細シートを LoggedInShell 直下に配置することで、
-            // ルート遷移をまたいでも同じ ViewModel を使えるようにする。Issue #37 で外部リンク
-            // 起動の実体（Custom Tabs）を結線するまでは onOpenExternal は no-op で受ける。
+            // ルート遷移をまたいでも同じ ViewModel を使えるようにする。
+            // Issue #37: onOpenExternal で LinkOpener.open(...) を呼び OpenLinkResult を
+            // シートに返す。詳細シート側は失敗結果を snackbar で通知する（Req 4.3）。
             ArticleDetailSheet(
-                onOpenExternal = { /* TODO(#37): Custom Tabs 起動 */ },
+                onOpenExternal = { url -> linkOpener.open(context, url) },
                 viewModel = articleDetailViewModel,
             )
         }
@@ -311,6 +320,13 @@ enum class AppShellSheet {
 class AppShellViewModel @Inject constructor(
     sessionStateProvider: SessionStateProvider,
     private val themeModeRepository: ThemeModeRepository,
+    /**
+     * Issue #37: 「元記事を開く」（詳細シートのフッタ／タイムラインカードの外部リンク）の
+     * 起動を担う共通オープナー。ViewModel が保持する理由は、Composable から直接
+     * `hiltViewModel()` で取れる単一のシェルスコープに集約するため。LinkOpener 自体は
+     * Singleton として Hilt 上で共有される（DI / NFR 1.1）。
+     */
+    val linkOpener: LinkOpener,
 ) : ViewModel() {
 
     val sessionState: StateFlow<SessionState> = sessionStateProvider.state.stateIn(

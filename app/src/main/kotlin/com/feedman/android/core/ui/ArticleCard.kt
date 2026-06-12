@@ -57,6 +57,9 @@ import java.time.Clock
  * @property hatebuFetchedAt はてブ取得時刻。`null` は取得未実施（"−" 表示）
  * @property summary 記事概要文字列。Issue #33 Req 1.4 / 1.5 に従い、空文字列のとき
  *   概要行を描画せずレイアウト領域も確保しない。既定値は `""`（後方互換）。
+ * @property link 元記事 URL（SPEC §4.2 `CrossFeedItem.link`）。Issue #37 で外部リンク
+ *   アイコンタップ時に Custom Tabs で開く対象として使う。既定値 `""` は mockMode や
+ *   link を持たないテストフィクスチャ用の後方互換。
  */
 data class ArticleCardModel(
     val id: String,
@@ -70,6 +73,7 @@ data class ArticleCardModel(
     val hatebuCount: Int,
     val hatebuFetchedAt: String?,
     val summary: String = "",
+    val link: String = "",
 )
 
 /**

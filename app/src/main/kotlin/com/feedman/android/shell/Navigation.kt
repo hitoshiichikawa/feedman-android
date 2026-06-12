@@ -11,6 +11,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.feedman.android.core.ui.OpenLinkResult
 import com.feedman.android.feature.timeline.TimelineScreen
 
 /**
@@ -34,6 +35,7 @@ import com.feedman.android.feature.timeline.TimelineScreen
 fun Navigation(
     navController: NavHostController,
     onOpenItemDetail: (itemId: String) -> Unit = {},
+    onOpenExternalLink: (url: String) -> OpenLinkResult = { OpenLinkResult.NoAppToHandle },
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -45,10 +47,10 @@ fun Navigation(
             // Issue #33: タイムラインカードからのコールバックを結線する。
             // - onOpenItemDetail: Issue #36 でシェル直下の ArticleDetailSheet を起動
             //   （open(itemId) を渡す）
-            // - onOpenExternalLink: Issue #37 で Custom Tabs 起動 + 既読化に差し替え
+            // - onOpenExternalLink: Issue #37 で Custom Tabs 起動 + 既読化を担当（AppShell 経由）
             TimelineScreen(
                 onOpenItemDetail = { itemId -> onOpenItemDetail(itemId) },
-                onOpenExternalLink = { /* TODO(#37) */ },
+                onOpenExternalLink = onOpenExternalLink,
             )
         }
         composable(

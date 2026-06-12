@@ -49,6 +49,8 @@ internal object TimelineCardModelMapper {
         // publishedAt を代用して HatebuBadge を「取得済み（数値表示）」モードで描画させる。
         hatebuFetchedAt = item.publishedAt,
         summary = item.summary,
+        // Issue #37: タイムラインカードの外部リンクアイコンが Custom Tabs で開く対象 URL。
+        link = item.link,
     )
 
     /**

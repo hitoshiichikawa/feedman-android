@@ -69,6 +69,7 @@ import com.feedman.android.core.ui.Favicon
 import com.feedman.android.core.ui.FeedmanSheet
 import com.feedman.android.core.ui.FeedmanSnackbar
 import com.feedman.android.core.ui.HatebuBadge
+import com.feedman.android.core.ui.OpenLinkResult
 import com.feedman.android.core.ui.RelativeTimeFormatter
 import com.feedman.android.core.ui.StarToggle
 import com.feedman.android.feature.articledetail.ArticleDetailEvent
@@ -99,21 +100,27 @@ const val ARTICLE_DETAIL_SHEET_TEST_TAG: String = "feature.articledetail.Article
  * 楽観的更新の失敗（[ArticleDetailEvent]）は `ViewModel` の `events` SharedFlow から流れ、
  * 本 Composable が [SnackbarHostState] に流して表示する（Req 3.3 / 4.5 / SPEC §6 準拠）。
  *
- * @param onOpenExternal 「元記事を開く」タップ時に呼ばれるコールバック（実体は Issue #37）。
- *        URL を引数に取り、Custom Tabs 起動を担当する。
+ * @param onOpenExternal 「元記事を開く」タップ時に呼ばれるコールバック（Issue #37 実体）。
+ *        URL を引数に取り Custom Tabs 起動を担当し、[OpenLinkResult] を返す。
+ *        本 Composable は返り値が失敗系（[OpenLinkResult.InvalidUrl] /
+ *        [OpenLinkResult.NoAppToHandle]）のとき snackbar でエラーを通知し、既読化を発火しない
+ *        （Req 4.3 — 未対応 URL では既読状態を変更しない）。
  * @param viewModel 親（呼び出し元 NavHost のルート）で `hiltViewModel()` 経由のインスタンス。
  */
 @Composable
 fun ArticleDetailSheet(
-    onOpenExternal: (url: String) -> Unit,
+    onOpenExternal: (url: String) -> OpenLinkResult,
     viewModel: ArticleDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     // 楽観的更新の失敗通知（Req 3.3 / 4.5）。stringResource を Composition 内で resolve する。
     val markReadFailedMsg = stringResource(R.string.article_detail_mark_read_failed)
     val starUpdateFailedMsg = stringResource(R.string.article_detail_star_update_failed)
+    // Issue #37: 外部リンク起動失敗時の通知文言
+    val openLinkFailedMsg = stringResource(R.string.article_detail_open_link_failed)
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             val message = when (event) {
@@ -132,9 +139,21 @@ fun ArticleDetailSheet(
             onRetry = viewModel::retry,
             onToggleStar = viewModel::toggleStar,
             onOpenExternalRequested = { detail ->
-                // Req 4.3: 未読の場合のみ既読化を発火 → onOpenExternal で外部リンク起動を依頼
-                viewModel.markReadOnOpenExternal()
-                onOpenExternal(detail.link)
+                // Issue #37 Req 1.1 / 1.2 / 4.3: LinkOpener 経由で起動し、結果に応じて分岐する。
+                // 成功（OpenedWithCustomTabs / OpenedWithFallback）→ 既読化（冪等）
+                // 失敗（InvalidUrl / NoAppToHandle）→ 既読化を行わず snackbar で通知
+                when (onOpenExternal(detail.link)) {
+                    OpenLinkResult.OpenedWithCustomTabs,
+                    OpenLinkResult.OpenedWithFallback -> {
+                        viewModel.markReadOnOpenExternal()
+                    }
+                    is OpenLinkResult.InvalidUrl,
+                    OpenLinkResult.NoAppToHandle -> {
+                        coroutineScope.launch {
+                            FeedmanSnackbar.show(snackbarHostState, openLinkFailedMsg)
+                        }
+                    }
+                }
             },
         )
     }

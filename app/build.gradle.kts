@@ -100,6 +100,8 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.datastore.preferences)
+    // Chrome Custom Tabs（Issue #37）: 記事の元 URL を Custom Tabs で開くために配線する
+    implementation(libs.androidx.browser)
 
     // Compose BOM-managed
     implementation(platform(libs.androidx.compose.bom))

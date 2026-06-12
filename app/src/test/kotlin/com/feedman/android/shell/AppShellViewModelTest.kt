@@ -3,8 +3,11 @@ package com.feedman.android.shell
 import app.cash.turbine.test
 import com.feedman.android.core.auth.SessionState
 import com.feedman.android.core.auth.SessionStateProvider
+import android.content.Context
 import com.feedman.android.core.designsystem.ThemeMode
 import com.feedman.android.core.designsystem.ThemeModeRepository
+import com.feedman.android.core.ui.LinkOpener
+import com.feedman.android.core.ui.OpenLinkResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -54,7 +57,7 @@ class AppShellViewModelTest {
     fun `LoggedOut を返す Provider を渡すと初期 state が LoggedOut になる_Req 3_1`() = runTest {
         // Arrange
         val provider = FakeSessionStateProvider(SessionState.LoggedOut)
-        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository())
+        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository(), NoopLinkOpener)
 
         // Act / Assert
         viewModel.sessionState.test {
@@ -67,7 +70,7 @@ class AppShellViewModelTest {
     fun `LoggedIn を返す Provider を渡すと初期 state が LoggedIn になる_Req 3_2`() = runTest {
         // Arrange
         val provider = FakeSessionStateProvider(SessionState.LoggedIn)
-        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository())
+        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository(), NoopLinkOpener)
 
         // Act / Assert
         viewModel.sessionState.test {
@@ -80,7 +83,7 @@ class AppShellViewModelTest {
     fun `LoggedOut から LoggedIn への遷移が観測される_Req 3_3`() = runTest {
         // Arrange
         val provider = FakeSessionStateProvider(SessionState.LoggedOut)
-        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository())
+        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository(), NoopLinkOpener)
 
         // Act / Assert
         viewModel.sessionState.test {
@@ -95,7 +98,7 @@ class AppShellViewModelTest {
     fun `LoggedIn から LoggedOut への遷移が観測される_Req 3_4`() = runTest {
         // Arrange
         val provider = FakeSessionStateProvider(SessionState.LoggedIn)
-        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository())
+        val viewModel = AppShellViewModel(provider, FakeThemeModeRepository(), NoopLinkOpener)
 
         // Act / Assert
         viewModel.sessionState.test {
@@ -114,6 +117,7 @@ class AppShellViewModelTest {
         val viewModel = AppShellViewModel(
             FakeSessionStateProvider(SessionState.LoggedIn),
             FakeThemeModeRepository(),
+            NoopLinkOpener,
         )
         // Act / Assert
         assertEquals(AppShellSheet.None, viewModel.activeSheet.value)
@@ -125,6 +129,7 @@ class AppShellViewModelTest {
         val viewModel = AppShellViewModel(
             FakeSessionStateProvider(SessionState.LoggedIn),
             FakeThemeModeRepository(),
+            NoopLinkOpener,
         )
         // Act
         viewModel.openSheet(AppShellSheet.Account)
@@ -138,6 +143,7 @@ class AppShellViewModelTest {
         val viewModel = AppShellViewModel(
             FakeSessionStateProvider(SessionState.LoggedIn),
             FakeThemeModeRepository(),
+            NoopLinkOpener,
         )
         // Act
         viewModel.openSheet(AppShellSheet.FeedRegistration)
@@ -151,6 +157,7 @@ class AppShellViewModelTest {
         val viewModel = AppShellViewModel(
             FakeSessionStateProvider(SessionState.LoggedIn),
             FakeThemeModeRepository(),
+            NoopLinkOpener,
         )
         viewModel.openSheet(AppShellSheet.Account)
         // Act
@@ -165,6 +172,7 @@ class AppShellViewModelTest {
         val viewModel = AppShellViewModel(
             FakeSessionStateProvider(SessionState.LoggedIn),
             FakeThemeModeRepository(),
+            NoopLinkOpener,
         )
         viewModel.openSheet(AppShellSheet.Account)
         // Act
@@ -179,7 +187,7 @@ class AppShellViewModelTest {
     fun `toggleTheme でライトからダークへ永続化される_31_Req 3_3_3_4`() = runTest {
         // Arrange
         val repo = FakeThemeModeRepository(initial = ThemeMode.LIGHT)
-        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo)
+        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo, NoopLinkOpener)
         viewModel.themeMode.test {
             assertEquals(ThemeMode.LIGHT, awaitItem())
             // Act
@@ -196,7 +204,7 @@ class AppShellViewModelTest {
     fun `toggleTheme でダークからライトへ永続化される_31_Req 3_3_3_4`() = runTest {
         // Arrange
         val repo = FakeThemeModeRepository(initial = ThemeMode.DARK)
-        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo)
+        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo, NoopLinkOpener)
         viewModel.themeMode.test {
             assertEquals(ThemeMode.DARK, awaitItem())
             // Act
@@ -212,7 +220,7 @@ class AppShellViewModelTest {
     fun `toggleTheme で FOLLOW_SYSTEM かつ暗色時はライト固定へ遷移する_31_Req 3_3_境界`() = runTest {
         // Arrange
         val repo = FakeThemeModeRepository(initial = ThemeMode.FOLLOW_SYSTEM)
-        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo)
+        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo, NoopLinkOpener)
         viewModel.themeMode.test {
             assertEquals(ThemeMode.FOLLOW_SYSTEM, awaitItem())
             // Act
@@ -227,7 +235,7 @@ class AppShellViewModelTest {
     fun `toggleTheme 永続化失敗時も UI 側のモードはそのまま反映される_31_NFR 2_1_異常系`() = runTest {
         // Arrange
         val repo = FakeThemeModeRepository(initial = ThemeMode.LIGHT, failOnWrite = true)
-        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo)
+        val viewModel = AppShellViewModel(FakeSessionStateProvider(SessionState.LoggedIn), repo, NoopLinkOpener)
         // Act
         viewModel.toggleTheme(currentlyDark = false)
         // Assert: 永続化先は更新されない（書き込み失敗）
@@ -270,5 +278,15 @@ class AppShellViewModelTest {
             current = mode
             _flow.value = mode
         }
+    }
+
+    /**
+     * Issue #37: AppShellViewModel テストでは [LinkOpener] の挙動は対象外のため、
+     * 起動を行わない no-op 実装を渡す。本テストは [LinkOpener] のフィールド注入が
+     * コンパイル可能であることだけを検証する。
+     */
+    private object NoopLinkOpener : LinkOpener {
+        override fun open(context: Context, url: String): OpenLinkResult =
+            OpenLinkResult.NoAppToHandle
     }
 }

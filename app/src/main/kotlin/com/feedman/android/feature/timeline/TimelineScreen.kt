@@ -37,6 +37,7 @@ import com.feedman.android.core.ui.FeedmanSnackbar
 import com.feedman.android.core.ui.ListFooterState
 import com.feedman.android.core.ui.LoadingFooter
 import com.feedman.android.core.ui.LoadingFullScreen
+import com.feedman.android.core.ui.OpenLinkResult
 import com.feedman.android.core.ui.TimelineScreenState
 import com.feedman.android.core.ui.resolveListFooterState
 import com.feedman.android.core.ui.resolveTimelineScreenState
@@ -73,13 +74,15 @@ import java.time.Clock
  *   （Req 5.1 / 5.2 / NFR 3.2）
  *
  * @param onOpenItemDetail 記事詳細を開くコールバック（実体は Issue #36 / Req 3.4）
- * @param onOpenExternalLink 外部リンクを開くコールバック（実体は Issue #37 / Req 4.3）
+ * @param onOpenExternalLink 外部リンクを開くコールバック（Issue #37 / Req 2.1 / Req 4.x）。
+ *        引数は元記事 URL、返り値は [OpenLinkResult]。本 Composable は成功結果のときに
+ *        ViewModel に既読化を依頼し（Req 2.2 / 2.4）、失敗結果のとき snackbar 通知のみ行う。
  */
 @Composable
 fun TimelineScreen(
     modifier: Modifier = Modifier,
     onOpenItemDetail: (itemId: String) -> Unit = {},
-    onOpenExternalLink: (itemId: String) -> Unit = {},
+    onOpenExternalLink: (url: String) -> OpenLinkResult = { OpenLinkResult.NoAppToHandle },
     viewModel: TimelineViewModel = hiltViewModel(),
 ) {
     val pagingItems = viewModel.cardPagingData.collectAsLazyPagingItems()
@@ -88,6 +91,35 @@ fun TimelineScreen(
     val clock = remember { Clock.systemDefaultZone() }
     val snackbarHostState = remember { SnackbarHostState() }
     val refreshErrorMessage = stringResource(id = R.string.timeline_refresh_error)
+    val markReadFailedMessage = stringResource(id = R.string.article_detail_mark_read_failed)
+    val openLinkFailedMessage = stringResource(id = R.string.timeline_open_link_failed)
+
+    // Issue #37 Req 2.4 / Req 3.3 / Req 4.x: ViewModel の externalLinkEvents を購読して
+    // snackbar 通知に変換する。
+    LaunchedEffect(viewModel) {
+        viewModel.externalLinkEvents.collect { event ->
+            val message = when (event) {
+                TimelineExternalLinkEvent.MarkReadFailed -> markReadFailedMessage
+                TimelineExternalLinkEvent.OpenLinkFailed -> openLinkFailedMessage
+            }
+            FeedmanSnackbar.show(snackbarHostState, message)
+        }
+    }
+
+    // Issue #37: ArticleCard の onOpenLink 結線。LinkOpener の結果を ViewModel に伝え、
+    // 成功時のみ既読化、失敗時は ViewModel 経由で通知する。
+    val onExternalLinkClicked: (itemId: String, link: String) -> Unit = { itemId, link ->
+        when (onOpenExternalLink(link)) {
+            OpenLinkResult.OpenedWithCustomTabs,
+            OpenLinkResult.OpenedWithFallback -> {
+                viewModel.markReadOnExternalOpen(itemId = itemId)
+            }
+            is OpenLinkResult.InvalidUrl,
+            OpenLinkResult.NoAppToHandle -> {
+                viewModel.notifyExternalLinkFailed()
+            }
+        }
+    }
 
     TimelineListContent(
         items = pagingItems,
@@ -95,7 +127,7 @@ fun TimelineScreen(
         snackbarHostState = snackbarHostState,
         refreshErrorMessage = refreshErrorMessage,
         onOpenItemDetail = onOpenItemDetail,
-        onOpenExternalLink = onOpenExternalLink,
+        onOpenExternalLink = onExternalLinkClicked,
         modifier = modifier,
     )
 }
@@ -112,7 +144,7 @@ internal fun TimelineListContent(
     snackbarHostState: SnackbarHostState,
     refreshErrorMessage: String,
     onOpenItemDetail: (itemId: String) -> Unit,
-    onOpenExternalLink: (itemId: String) -> Unit,
+    onOpenExternalLink: (itemId: String, link: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val refresh = items.loadState.refresh
@@ -200,7 +232,7 @@ private fun TimelineList(
     append: LoadState,
     clock: Clock,
     onOpenItemDetail: (itemId: String) -> Unit,
-    onOpenExternalLink: (itemId: String) -> Unit,
+    onOpenExternalLink: (itemId: String, link: String) -> Unit,
 ) {
     val footerState = resolveListFooterState(
         isAppendLoading = append is LoadState.Loading,
@@ -229,7 +261,8 @@ private fun TimelineList(
                     // Issue #38 でサーバー反映を結線する。本 Issue では no-op。
                 },
                 clock = clock,
-                onOpenLink = { id -> onOpenExternalLink(id) },
+                // Issue #37: ArticleCardModel.link を引数に追加して渡す
+                onOpenLink = { id -> onOpenExternalLink(id, card.link) },
             )
         }
         // フッタ状態に応じて末尾アイテムを挿入する（排他 / NFR 2.2）。
