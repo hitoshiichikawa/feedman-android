@@ -50,9 +50,25 @@
     <string name="drawer_action_account">アカウント</string>
     <!-- Req 5.5: ドロワーフィードセクションの + ボタン a11y -->
     <string name="drawer_action_add_feed">フィードを登録</string>
-    <!-- Req 4.4: アカウント placeholder シートの pane title / 仮文言 -->
+    <!-- Issue #49: アカウントシート（AccountSheet）固有文言 -->
+    <!-- Req 1.1 / 1.3 / NFR 1.2: シートの pane title（スクリーンリーダー読み上げ） -->
     <string name="sheet_account_placeholder_title">アカウント</string>
+    <!-- #31 placeholder 文言（Issue #49 で AccountSheet 本実装に置換済み。互換のために残置） -->
     <string name="sheet_account_placeholder_body">アカウントシートは Issue #49 で実装します。</string>
+    <!-- Req 2.3: ユーザー領域見出し（プロトタイプ FMAccountSheet の "You" 相当） -->
+    <string name="account_sheet_user_label">You</string>
+    <!-- Req 2.2: email が空 / 欠落時の代替文字列 -->
+    <string name="account_sheet_email_missing">メールアドレス未設定</string>
+    <!-- Req 1.3 / NFR 1.2: アバター（プロトタイプの user アイコン）の a11y 説明 -->
+    <string name="account_sheet_avatar_description">アカウントアイコン</string>
+    <!-- Req 1.3 / NFR 1.2: 閉じるボタンの contentDescription -->
+    <string name="account_sheet_close_description">アカウントシートを閉じる</string>
+    <!-- Req 3.1 / NFR 1.2: ローディングインジケータの contentDescription -->
+    <string name="account_sheet_loading_description">アカウント情報を読み込み中</string>
+    <!-- Req 4.1: 回復可能エラー時のメッセージ（FeedmanException.errorMessage で差し替え可） -->
+    <string name="account_sheet_load_error">アカウント情報の取得に失敗しました</string>
+    <!-- Req 4.1: 再試行ボタン -->
+    <string name="account_sheet_retry">再試行</string>
     <!-- Req 5.4: フィード登録 placeholder シートの pane title / 仮文言 -->
     <string name="sheet_feed_registration_placeholder_title">フィードを登録</string>
     <string name="sheet_feed_registration_placeholder_body">フィード登録シートは Issue #44 で実装します。</string>
