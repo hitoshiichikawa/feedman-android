@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -240,10 +241,15 @@ private fun DrawerFeedsSection(
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.weight(1f),
             )
-            // Issue #31 Req 5.1, 5.5 / NFR 3.1: 48dp タッチターゲット確保
+            // Issue #31 Req 5.1, 5.5 / NFR 3.1 / Issue #53 Req 4.1: 44dp タッチターゲット最小確保。
+            // 旧実装は size(40.dp) で固定し 44dp 未満のヒット領域となっていたため、最小タップ標的
+            // を sizeIn で確保し、アイコン自体の描画サイズはアイコン側 modifier で制御する。
             IconButton(
                 onClick = onAddFeedTap,
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.sizeIn(
+                    minWidth = MaterialTheme.feedmanDimens.minTapTarget,
+                    minHeight = MaterialTheme.feedmanDimens.minTapTarget,
+                ),
             ) {
                 Icon(
                     imageVector = Icons.Filled.Add,
@@ -335,7 +341,7 @@ private fun DrawerFeedSectionError(message: String, onRetry: () -> Unit) {
 }
 
 /**
- * 1 フィード行の描画（Issue #30 / Req 1.2, 1.4, 2.4, 3.1, 4.1）。
+ * 1 フィード行の描画（Issue #30 / Req 1.2, 1.4, 2.4, 3.1, 4.1 / Issue #53 Req 1.2, 3.4, 4.1）。
  *
  * 行の配置（左 → 右、Req 1.2 / NFR 1.1）:
  * favicon → タイトル → 状態アイコン → 未読バッジ → 設定アイコン
@@ -343,6 +349,15 @@ private fun DrawerFeedSectionError(message: String, onRetry: () -> Unit) {
  * - タイトルは [TextOverflow.Ellipsis] + `maxLines = 1` で省略表記（Req 1.4 / NFR 1.2）
  * - 行（設定アイコン以外）タップで [onSelectFeed] を発火（Req 3.1）
  * - 設定アイコンタップで [onSelectFeedSettings] を発火し、行タップ伝播を抑制（Req 4.2）
+ *
+ * a11y（Issue #53 Req 1.2）:
+ * - 行の clickable 領域に [clearAndSetSemantics] で「フィード名、状態、未読 N 件」の
+ *   1 文化された contentDescription を付与する。配下の Favicon / 状態アイコン / 未読バッジ
+ *   の個別 contentDescription は merge ではなく置換されるため、TalkBack の冗長な列挙を防ぐ。
+ * - 設定 IconButton はクリック領域として独立し、行の semantics 外（兄弟ノード）に置く。
+ *
+ * Issue #53 Req 4.1: 設定 IconButton のタップ標的を `sizeIn(minTapTarget)` で 44dp 以上に
+ * 拡大し、固定 28dp による誤タップを防ぐ。表示アイコンサイズ（iconSmall = 18dp）は維持。
  */
 @Composable
 private fun DrawerFeedRowItem(
@@ -350,38 +365,72 @@ private fun DrawerFeedRowItem(
     onSelectFeed: (DrawerFeedRow) -> Unit,
     onSelectFeedSettings: (DrawerFeedRow) -> Unit,
 ) {
+    // Issue #53 Req 1.2: 行全体のまとまった読み上げ文言を解決する。
+    val a11yResource = DrawerFeedRowA11y.resolve(row.statusIcon, row.unreadCount)
+    val rowDescription = if (a11yResource.hasUnreadArg) {
+        stringResource(rowDescriptionResId(a11yResource), row.title, row.unreadCount)
+    } else {
+        stringResource(rowDescriptionResId(a11yResource), row.title)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable { onSelectFeed(row) } // Req 3.1: 設定アイコン以外の領域タップで遷移要求
+            // Issue #53 Req 1.2: 行内子要素（favicon / 状態アイコン / 未読バッジ）の個別
+            // contentDescription を上書きし、行全体を 1 文として読み上げる。
+            // 設定 IconButton は本 Row の clickable 外側（後続の兄弟ノード）として配置すれば
+            // 別の a11y ノードになるが、本実装では行内の IconButton も同じ Row 内にいるため、
+            // clearAndSetSemantics の影響対象は行 clickable の範囲のみ。
+            // ただし子の semantics を一括 clear すると IconButton も読まれなくなるため、
+            // ここでは clickable の親 Row には設定せず、後段の「タイトル + favicon + 状態 + 未読バッジ」
+            // を包む Row に semantics を適用する。
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        Favicon(
-            faviconValue = row.faviconValue,
-            feedTitle = row.title,
-            size = MaterialTheme.feedmanDimens.faviconMedium,
-            contentDescription = stringResource(R.string.drawer_feed_favicon_description, row.title),
-        )
-        Text(
-            text = row.title,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis, // Req 1.4 / NFR 1.2: 末尾省略 1 行
-            modifier = Modifier.weight(1f),
-        )
-        // 状態アイコン（Req 2.1, 2.2, 2.3, 2.4 — 未読バッジの左に配置）
-        FeedStatusIconView(icon = row.statusIcon)
-        // 未読バッジ（Req 1.1.1, 1.1.2）
-        if (row.showUnreadBadge) {
-            UnreadBadge(count = row.unreadCount)
+        // Issue #53 Req 1.2: 行情報セクション（favicon / タイトル / 状態 / 未読バッジ）を
+        // 1 つの a11y ノードに纏める。設定 IconButton は本 Row の外（兄弟）に配置する。
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clearAndSetSemantics { contentDescription = rowDescription },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            Favicon(
+                faviconValue = row.faviconValue,
+                feedTitle = row.title,
+                size = MaterialTheme.feedmanDimens.faviconMedium,
+                contentDescription = stringResource(
+                    R.string.drawer_feed_favicon_description,
+                    row.title,
+                ),
+            )
+            Text(
+                text = row.title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis, // Req 1.4 / NFR 1.2: 末尾省略 1 行
+                modifier = Modifier.weight(1f),
+            )
+            // 状態アイコン（Req 2.1, 2.2, 2.3, 2.4 — 未読バッジの左に配置）
+            FeedStatusIconView(icon = row.statusIcon)
+            // 未読バッジ（Req 1.1.1, 1.1.2）
+            if (row.showUnreadBadge) {
+                UnreadBadge(count = row.unreadCount)
+            }
         }
-        // 設定アイコン（Req 4.1, 4.2, 4.3）
+        // 設定アイコン（Req 4.1, 4.2, 4.3 / Issue #53 Req 4.1）。
+        // 行情報の a11y ノードと分離するため、纏め用 Row の外側に置く。
         IconButton(
             onClick = { onSelectFeedSettings(row) }, // Req 4.2: 行 onClick は親 Row、IconButton は独自 onClick で伝播分離
-            modifier = Modifier.size(28.dp),
+            // Issue #53 Req 4.1: 固定 28dp のヒット領域では 44dp 未満となり、フォントスケール
+            // 200% 環境でも誤タップが発生しうる。sizeIn で 44dp 最小タップ標的を確保する。
+            modifier = Modifier.sizeIn(
+                minWidth = MaterialTheme.feedmanDimens.minTapTarget,
+                minHeight = MaterialTheme.feedmanDimens.minTapTarget,
+            ),
         ) {
             Icon(
                 imageVector = Icons.Filled.Settings,
@@ -394,6 +443,18 @@ private fun DrawerFeedRowItem(
             )
         }
     }
+}
+
+/**
+ * Issue #53 Req 1.2: [DrawerFeedRowA11yResource] から実際の string resource ID を解決する。
+ */
+private fun rowDescriptionResId(resource: DrawerFeedRowA11yResource): Int = when (resource) {
+    DrawerFeedRowA11yResource.ActiveWithUnread -> R.string.drawer_feed_row_description_active
+    DrawerFeedRowA11yResource.ActiveNoUnread -> R.string.drawer_feed_row_description_active_no_unread
+    DrawerFeedRowA11yResource.StoppedWithUnread -> R.string.drawer_feed_row_description_stopped
+    DrawerFeedRowA11yResource.StoppedNoUnread -> R.string.drawer_feed_row_description_stopped_no_unread
+    DrawerFeedRowA11yResource.ErrorWithUnread -> R.string.drawer_feed_row_description_error
+    DrawerFeedRowA11yResource.ErrorNoUnread -> R.string.drawer_feed_row_description_error_no_unread
 }
 
 /**
