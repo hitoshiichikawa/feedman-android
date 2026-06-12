@@ -1,13 +1,17 @@
 package com.feedman.android.di
 
+import com.feedman.android.core.auth.AuthRepository
+import com.feedman.android.core.auth.AuthRepositoryImpl
 import com.feedman.android.core.auth.EncryptedPrefsTokenStore
 import com.feedman.android.core.auth.MockModeSessionStateProvider
 import com.feedman.android.core.auth.SessionStateProvider
 import com.feedman.android.core.auth.TokenStore
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.time.Clock
 import javax.inject.Singleton
 
 /**
@@ -42,4 +46,21 @@ abstract class AuthModule {
     abstract fun bindSessionStateProvider(
         impl: MockModeSessionStateProvider,
     ): SessionStateProvider
+
+    /**
+     * [AuthRepository] の本実装バインディング（Issue #21）。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
+
+    companion object {
+        /**
+         * AuthRepositoryImpl が TokenSet の expires_at 計算に使う [Clock] を提供する。
+         * テスト時は `@TestInstallIn` で固定 [Clock] に差し替える。
+         */
+        @Provides
+        @Singleton
+        fun provideAuthClock(): Clock = Clock.systemUTC()
+    }
 }
