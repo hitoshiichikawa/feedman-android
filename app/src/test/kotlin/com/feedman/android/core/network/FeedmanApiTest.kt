@@ -7,6 +7,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -181,9 +182,19 @@ class FeedmanApiTest {
         )
         val body1 = r1.body.readUtf8()
         assertTrue("body should include is_read=true: $body1", body1.contains("\"is_read\":true"))
+        // Issue #35 Req 2.2: 指定しないフィールド（is_starred=null）は body に乗らない
+        assertFalse(
+            "Issue #35 Req 2.2: null フィールドは送信されない: $body1",
+            body1.contains("is_starred"),
+        )
 
         val body2 = r2.body.readUtf8()
         assertTrue("body should include is_starred=true: $body2", body2.contains("\"is_starred\":true"))
+        // Issue #35 Req 2.3: 指定しないフィールド（is_read=null）は body に乗らない
+        assertFalse(
+            "Issue #35 Req 2.3: null フィールドは送信されない: $body2",
+            body2.contains("is_read"),
+        )
     }
 
     @Test

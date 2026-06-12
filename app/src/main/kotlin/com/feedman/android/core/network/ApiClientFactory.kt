@@ -32,15 +32,19 @@ object ApiClientFactory {
      * 全 API レスポンス / リクエストで共有する JSON 構成。
      *
      * - `ignoreUnknownKeys = true`: SPEC §4 へのフィールド追加で decode が壊れないようにする（Req 2.2）。
+     * - `explicitNulls = false`: `null` フィールドをエンコード時に **完全に省略** する。
+     *   `PUT /api/items/{id}/state` の partial update（`{ is_read?, is_starred? }`）を
+     *   表現するための要件（Issue #35 Req 2.2 / 2.3）。
+     *   デコード側では、JSON 側のキー欠落は対応するプロパティのデフォルト値（本リポジトリの
+     *   nullable フィールドはすべて `= null` 既定）にフォールバックするため、既存レスポンスの
+     *   `feed_favicon_url` / `hatebu_fetched_at` / `error_message` などの decode 挙動は不変。
      * - 既定の null 扱い（kotlinx.serialization のデフォルト挙動 = `null` を nullable プロパティへ
      *   マップ）で SPEC §4.4 の `feed_favicon_url` / `error_message` / `since_time` などに対応
      *   できることを Issue #15 で確認済み（Req 2.3）。
      */
     val json: Json = Json {
         ignoreUnknownKeys = true
-        // explicitNulls はデフォルト true。null を明示的にシリアライズする（PUT /api/items/{id}/state の
-        // `is_read=null` 等のフィールド省略を表現するため、フィールドの省略は呼び出し側で
-        // データクラスを使い分けるか、デフォルト値で対応する）。
+        explicitNulls = false
     }
 
     /**
