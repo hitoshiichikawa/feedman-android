@@ -44,6 +44,8 @@ import com.feedman.android.core.ui.FeedmanSheet
 import com.feedman.android.core.ui.LinkOpener
 import com.feedman.android.feature.articledetail.ArticleDetailSheet
 import com.feedman.android.feature.articledetail.ArticleDetailViewModel
+import com.feedman.android.feature.subscriptionsettings.SubscriptionSettingsSheet
+import com.feedman.android.feature.subscriptionsettings.SubscriptionSettingsViewModel
 import androidx.compose.ui.platform.LocalContext
 import com.feedman.android.feature.login.LoginPlaceholderScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -96,6 +98,10 @@ private fun LoggedInShell() {
         ?.destination?.route ?: AppRoute.Timeline.id
     val activeSheet by viewModel.activeSheet.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    // Issue #43 Req 1.1 / 1.2: 購読設定シートは LoggedInShell のスコープで 1 つ保持し、
+    // ドロワー（DrawerContent.onSelectFeedSettings）と FeedScreen の設定導線の双方から
+    // open(feedId) で対象を切替える。
+    val subscriptionSettingsViewModel: SubscriptionSettingsViewModel = hiltViewModel()
 
     // Req 1.1〜1.5: タイトル/サブタイトルは純粋関数で解決し、現在ルートに追従させる
     val appBarStrings = AppBarStrings(
@@ -150,8 +156,11 @@ private fun LoggedInShell() {
                     }
                     coroutineScope.launch { drawerState.close() }
                 },
-                // #30 Req 4.1, 4.2, 4.3: 設定アイコンは #43 のシート起動入口として配線のみ。
-                onSelectFeedSettings = { /* #43 で設定シートを起動する。配線済み no-op。 */ },
+                // #30 Req 4.1, 4.2, 4.3 / #43 Req 1.1: 設定アイコンで購読設定シートを起動 + ドロワー閉。
+                onSelectFeedSettings = { row ->
+                    subscriptionSettingsViewModel.open(row.feedId)
+                    coroutineScope.launch { drawerState.close() }
+                },
                 // #31 Req 4.2, 4.3: ヘッダのユーザー領域タップでアカウントシート起動 + ドロワー閉
                 onAccountAreaTap = {
                     viewModel.openSheet(AppShellSheet.Account)
@@ -226,6 +235,10 @@ private fun LoggedInShell() {
                 navController = navController,
                 onOpenItemDetail = { itemId -> articleDetailViewModel.open(itemId) },
                 onOpenExternalLink = { url -> linkOpener.open(context, url) },
+                // Issue #43 Req 1.2: フィード別画面の設定導線から購読設定シートを開く。
+                onOpenSubscriptionSettings = { feedId ->
+                    subscriptionSettingsViewModel.open(feedId)
+                },
                 modifier = Modifier.padding(padding),
             )
             // Issue #36 Req 1.1, 1.4, 1.5: 詳細シートを LoggedInShell 直下に配置することで、
@@ -235,6 +248,32 @@ private fun LoggedInShell() {
             ArticleDetailSheet(
                 onOpenExternal = { url -> linkOpener.open(context, url) },
                 viewModel = articleDetailViewModel,
+            )
+            // Issue #43: 購読設定シート。LoggedInShell の Scaffold 内（NavHost と同じ
+            // スコープ）に配置し、解除成功時に現在の feed/{feedId} ルートと照合できる
+            // ようにする（Req 4.5）。
+            SubscriptionSettingsSheet(
+                onUnsubscribed = { unsubscribedFeedId ->
+                    // Req 4.5: 当該フィードの記事一覧を表示中なら timeline へ退避する。
+                    // 現在のルート ID から feedId を抽出して比較する。
+                    val currentFeedId = navController.currentBackStackEntry
+                        ?.arguments?.getString(AppRoute.Feed.ARG_FEED_ID)
+                    if (currentFeedId == unsubscribedFeedId) {
+                        navController.navigate(AppRoute.Timeline.id) {
+                            // feed/{feedId} を back stack から外し、戻る操作で戻らないようにする
+                            popUpTo(AppRoute.Timeline.id) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onUnauthorized = {
+                    // Req 5.3: 認証切れ時はログイン導線へ。SessionStateProvider が LoggedOut
+                    // を流せば AppShell が自動でログイン画面に切替わるため、ここでは追加の
+                    // 明示的な navigate は不要（観測ベースで切り替わる）。
+                    // 認証セッション更新は別 Issue の AuthRepository 配下で行うため、
+                    // 本実装では設定シートを閉じるだけに留める（VM 側で close 済み）。
+                },
+                viewModel = subscriptionSettingsViewModel,
             )
         }
     }
