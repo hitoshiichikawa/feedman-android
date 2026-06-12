@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Feedman</string>
-    <string name="login_placeholder_title">ログイン</string>
-    <string name="login_placeholder_body">後続 Issue で Google ログインを実装します。</string>
-    <string name="login_placeholder_button">ログイン（未実装）</string>
+    <!-- Issue #23: ログイン画面文言（fm-sheets.jsx FMLogin 準拠） -->
+    <!-- Req 1.1: サービス名見出し -->
+    <string name="login_title">Feedman</string>
+    <!-- Req 1.1: 短い案内文（fm-sheets.jsx の "通勤中のニュースチェックを..." 相当） -->
+    <string name="login_body">通勤中のニュースチェックを、ひとつのタイムラインに。</string>
+    <!-- Req 2.1: Google ログイン主ボタン -->
+    <string name="login_google_button">Google でログイン</string>
+    <!-- Req 1.1 補助文言: 利用規約・プライバシーポリシー同意の文言（fm-sheets.jsx 相当） -->
+    <string name="login_legal_notice">続行することで利用規約とプライバシーポリシーに同意したものとみなされます</string>
+    <!-- Req 4.1: INVALID_GRANT 失敗時の文言（auth_code 期限切れ・再利用） -->
+    <string name="login_error_invalid_grant">ログインを完了できませんでした。もう一度お試しください。</string>
+    <!-- Req 4.2: ネットワーク失敗時の文言 -->
+    <string name="login_error_network">ネットワークに接続できませんでした。接続状況を確認してもう一度お試しください。</string>
+    <!-- Req 4.1: サーバーエラー時の汎用フォールバック文言 -->
+    <string name="login_error_generic">ログインに失敗しました。時間をおいてもう一度お試しください。</string>
     <string name="timeline_title">すべての新着</string>
     <string name="timeline_empty">記事がありません</string>
     <string name="drawer_timeline">すべての新着</string>
