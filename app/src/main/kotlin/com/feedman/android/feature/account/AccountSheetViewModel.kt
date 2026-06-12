@@ -2,6 +2,7 @@ package com.feedman.android.feature.account
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.feedman.android.core.auth.LogoutCoordinator
 import com.feedman.android.core.data.UserRepository
 import com.feedman.android.core.network.FeedmanException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,6 +51,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AccountSheetViewModel @Inject constructor(
     private val repository: UserRepository,
+    private val logoutCoordinator: LogoutCoordinator,
 ) : ViewModel() {
 
     private val _uiState: MutableStateFlow<AccountSheetUiState> =
@@ -67,6 +69,9 @@ class AccountSheetViewModel @Inject constructor(
 
     /** Req 1.4: 取得済み User を保持し、再 [open] 時の再フェッチを抑止する。 */
     private var cachedUser: com.feedman.android.core.model.User? = null
+
+    /** Issue #50 Req 1.2 / 1.3: ログアウト進行中のジョブ。多重起動を防ぐ。 */
+    private var logoutJob: Job? = null
 
     /**
      * Req 1.1 / 1.2 / 1.4: ドロワーフッタのアカウント項目から呼ばれて、シートを開く。
@@ -97,6 +102,54 @@ class AccountSheetViewModel @Inject constructor(
         fetchJob?.cancel()
         fetchJob = null
         _uiState.value = AccountSheetUiState.Hidden
+    }
+
+    /**
+     * Issue #50 Req 1.2 / 1.3 / 1.4 / 4.3 / 5.2: ログアウト処理を開始する。
+     *
+     * 観測可能挙動:
+     * 1. 現在 [AccountSheetUiState.Visible] であれば、`logoutInProgress = true` に切り替える
+     *    （Req 1.3 ボタン disabled / Req 1.4 ローディング表現）
+     * 2. [LogoutCoordinator.perform] を 1 回呼び出す（Req 2.1 / 2.2 / 2.3 / 2.4 / 3.1 / 5.1）
+     * 3. 完了後、Hidden に戻し cachedUser を破棄する（Req 3.3 / 4.3）
+     * 4. 進行中の現在ユーザー取得ジョブをキャンセルする（互いに矛盾する状態を作らないため）
+     *
+     * 多重押下対策: 既に [logoutJob] が active な間は no-op（Req 1.3 ボタン disabled の補強）。
+     *
+     * 例外モデル: [LogoutCoordinator.perform] は例外を投げない契約のため、本メソッド内でも
+     * try/catch を行わない。万一 throw された場合でも `finally` で `logoutInProgress = false`
+     * 相当（Hidden）に戻す経路を確保する（防衛的）。
+     *
+     * SessionState 遷移は本メソッドでは行わず、AuthRepository.observeIsAuthenticated() が
+     * false に遷移する経路を介して
+     * [com.feedman.android.core.auth.AuthRepositorySessionStateProvider] が
+     * [com.feedman.android.core.auth.SessionState.LoggedOut] を流す
+     * （Req 4.1 / 4.2 / 4.3 / 5.2）。
+     */
+    fun logout() {
+        // 多重起動防止（Req 1.3 の追加保険）
+        if (logoutJob?.isActive == true) return
+        val current = _uiState.value
+        if (current !is AccountSheetUiState.Visible) return
+
+        // Req 1.3 / 1.4: 進行中状態に遷移
+        _uiState.value = current.copy(logoutInProgress = true)
+        // Req 3.3: ログアウト確定前に cachedUser を破棄する（次回 open でも再現しない）
+        cachedUser = null
+        // 取得進行中なら不要なので止める（観測可能状態が混ざるのを防ぐ）
+        fetchJob?.cancel()
+        fetchJob = null
+
+        logoutJob = viewModelScope.launch {
+            try {
+                // Req 2.1: revoke + キャッシュリセット（NFR 1.2 上限 10 秒）。
+                // coordinator は例外を投げない契約。
+                logoutCoordinator.perform()
+            } finally {
+                // Req 4.3: シートを閉じる（SessionState 経路でログイン画面に遷移）
+                _uiState.value = AccountSheetUiState.Hidden
+            }
+        }
     }
 
     /**

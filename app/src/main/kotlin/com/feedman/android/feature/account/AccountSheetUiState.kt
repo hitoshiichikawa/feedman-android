@@ -24,9 +24,15 @@ sealed interface AccountSheetUiState {
 
     /**
      * シート表示中。`loadState` でユーザー領域の表示を切替える。
+     *
+     * @property loadState 現在ユーザー領域のロード結果
+     * @property logoutInProgress Issue #50 Req 1.3 / 1.4: ログアウト処理が進行中か。
+     *   `true` の間、ログアウトボタンを disabled にし（再押下不可）、ローディング表現を出す。
+     *   `false` のときはログアウトボタンを通常表示する。
      */
     data class Visible(
         val loadState: LoadState,
+        val logoutInProgress: Boolean = false,
     ) : AccountSheetUiState
 
     /** ユーザー領域のロード状態（Req 2, 3, 4）。 */
