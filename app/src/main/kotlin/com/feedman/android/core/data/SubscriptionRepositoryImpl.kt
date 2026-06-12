@@ -52,7 +52,7 @@ import javax.inject.Singleton
 @Singleton
 class SubscriptionRepositoryImpl @Inject constructor(
     private val api: FeedmanApi,
-) : SubscriptionRepository {
+) : SubscriptionRepository, UserScopedCache {
 
     private val _subscriptions: MutableStateFlow<List<Subscription>> = MutableStateFlow(emptyList())
     private val _loadState: MutableStateFlow<SubscriptionLoadState> =
@@ -188,6 +188,20 @@ class SubscriptionRepositoryImpl @Inject constructor(
             }
         }
         return updated
+    }
+
+    /**
+     * ログアウト時に購読リストと取得状態を初期状態に戻す（Issue #50 Req 3.1）。
+     *
+     * - [_subscriptions] を空リストに戻す（前ユーザーのフィード一覧を破棄）
+     * - [_loadState] を [SubscriptionLoadState.Idle] に戻す（前ユーザーのエラー / Success 状態を破棄）
+     *
+     * 並行な [refresh] 進行中は [refreshMutex] によりリセット完了後に新しい値が確定する。
+     * 本メソッドは I/O を伴わず、StateFlow への書き込みのみで完結する。
+     */
+    override suspend fun reset() {
+        _subscriptions.value = emptyList()
+        _loadState.value = SubscriptionLoadState.Idle
     }
 
     /**

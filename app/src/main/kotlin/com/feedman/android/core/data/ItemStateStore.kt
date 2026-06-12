@@ -80,7 +80,7 @@ data class ItemStateFailure(
 class ItemStateStore @Inject constructor(
     private val repository: ItemDetailRepository,
     @ApplicationScope private val scope: CoroutineScope,
-) {
+) : UserScopedCache {
 
     private val _overlays = MutableStateFlow<Map<String, ItemStateOverlay>>(emptyMap())
 
@@ -155,6 +155,25 @@ class ItemStateStore @Inject constructor(
     fun markRead(itemId: String, currentIsRead: Boolean) {
         if (currentIsRead) return // Req 5.3: 冪等
         setRead(itemId = itemId, isRead = true, baselineRead = false)
+    }
+
+    /**
+     * ログアウト時に overlay を初期状態に戻す（Issue #50 Req 3.1）。
+     *
+     * 以下を実行する:
+     * - [_overlays] を空マップに置き換える（前ユーザーの既読・スター楽観値を破棄）
+     * - inflight な `repository.updateState` がもし継続中であれば、その完了結果は
+     *   既に空になった overlay に向けてのロールバックを試みる可能性がある。ただし
+     *   rollback ロジックは「該当 item が存在しなければ早期 return する」設計のため
+     *   （[rollbackRead] / [rollbackStarred] 参照）、競合は安全に吸収される。
+     *
+     * 失敗イベント [_failures] は `replay = 0` の SharedFlow であり、購読者が居なくなれば
+     * 自動的にバッファから消える（明示的なバッファ clear API は SharedFlow に存在しない）。
+     * ログアウト後にログイン画面へ遷移する経路では旧 ViewModel が破棄されるため、
+     * 残置されたイベントが新ユーザーに観測されることは無い。
+     */
+    override suspend fun reset() {
+        _overlays.value = emptyMap()
     }
 
     // ── internal ─────────────────────────────────────────────────────
