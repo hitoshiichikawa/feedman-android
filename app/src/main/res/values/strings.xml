@@ -7,7 +7,21 @@
     <string name="timeline_title">すべての新着</string>
     <string name="timeline_empty">記事がありません</string>
     <string name="drawer_timeline">すべての新着</string>
-    <string name="drawer_starred">お気に入り（未実装）</string>
+    <string name="drawer_starred">お気に入り</string>
+
+    <!-- Issue #29: ドロワー追加要素 -->
+    <!-- Req 3.5: ヘッダのユーザー placeholder（後続 Issue で AuthMe 結果に差し替え） -->
+    <string name="drawer_account_placeholder_email">you@example.com</string>
+    <!-- Req 2.4 / 2.5: フィード一覧プレースホルダのセクションラベル（#30 でフィード一覧に置換） -->
+    <string name="drawer_section_feeds">フィード</string>
+    <!-- 静的 placeholder 文言（#30 で動的フィード一覧に置換予定） -->
+    <string name="drawer_feeds_placeholder_pending">フィード一覧は別 Issue で実装します</string>
+    <!-- Req 4.1: フッタ「アカウント」（ボトムシート起動入口。配線は後続 Issue） -->
+    <string name="drawer_footer_account">アカウント</string>
+    <!-- Req 4.1: フッタ「テーマ切替」（配線は後続 Issue） -->
+    <string name="drawer_footer_theme_toggle">テーマ切替</string>
+    <!-- Req 2.1: 上部アプリバー左端のメニューボタン contentDescription -->
+    <string name="appbar_open_drawer">メニューを開く</string>
 
     <!-- Issue #27: 共有メタ部品のアクセシビリティラベルと表記 -->
     <!-- Req 1.5: is_starred=true 時のスタートグル contentDescription -->
