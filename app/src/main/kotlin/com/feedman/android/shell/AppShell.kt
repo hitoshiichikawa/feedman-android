@@ -28,10 +28,14 @@ import androidx.navigation.compose.rememberNavController
 import com.feedman.android.R
 import com.feedman.android.core.auth.SessionState
 import com.feedman.android.core.auth.SessionStateProvider
+import com.feedman.android.core.designsystem.ThemeMode
+import com.feedman.android.core.designsystem.ThemeModeRepository
 import com.feedman.android.feature.login.LoginPlaceholderScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -138,15 +142,39 @@ private fun LoggedInShell() {
 }
 
 /**
- * [AppShell] が観測する [SessionStateProvider] 経由のセッション状態を保持する
- * ViewModel（Req 3.5 / NFR 2.2）。
+ * App Shell が起動するボトムシートの種別（Issue #31 / Req 4.2, 5.2）。
+ *
+ * - [None]: 起動中シートなし（初期値）
+ * - [Account]: ドロワーヘッダのユーザー領域から起動する placeholder シート（Req 4.2, 4.4）
+ * - [FeedRegistration]: ドロワーの + ボタンから起動する placeholder シート（Req 5.2, 5.4）
+ *
+ * 本実装（#49 / #44）が入るまでの間、UI シェルとして閉じた状態を担保する placeholder
+ * シートを表示するための起動点として使う。
+ */
+enum class AppShellSheet {
+    None,
+    Account,
+    FeedRegistration,
+}
+
+/**
+ * [AppShell] が観測する [SessionStateProvider] 経由のセッション状態と、シート起動状態を
+ * 保持する ViewModel（Req 3.5 / NFR 2.2 / Issue #31 Req 4.2, 5.2）。
  *
  * `StateFlow` 化は `stateIn` で行い、初期値はテストで明示的に観測されるまでの暫定値
  * として [SessionState.LoggedOut] を採用する（未認証時はログイン画面が出る安全側）。
+ *
+ * シート起動状態 [activeSheet] は [MutableStateFlow] で UI から書き換え可能とし、
+ * - [openSheet] で指定種別のシートを起動
+ * - [dismissSheet] で `None` に戻す
+ *
+ * テーマモード [themeMode] は [ThemeModeRepository] を観測し、[toggleTheme] で現在の表示色
+ * （`currentlyDark`）を引数に取って次モードへ即時切替 + 永続化する（Issue #31 Req 3.3, 3.4）。
  */
 @HiltViewModel
 class AppShellViewModel @Inject constructor(
     sessionStateProvider: SessionStateProvider,
+    private val themeModeRepository: ThemeModeRepository,
 ) : ViewModel() {
 
     val sessionState: StateFlow<SessionState> = sessionStateProvider.state.stateIn(
@@ -155,7 +183,44 @@ class AppShellViewModel @Inject constructor(
         initialValue = sessionStateProvider.state.value,
     )
 
+    val themeMode: StateFlow<ThemeMode> = themeModeRepository.observe().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = ThemeMode.DEFAULT,
+    )
+
+    private val _activeSheet = MutableStateFlow(AppShellSheet.None)
+    val activeSheet: StateFlow<AppShellSheet> = _activeSheet.asStateFlow()
+
+    /** 指定種別の placeholder シートを起動する（Req 4.2 / 5.2）。 */
+    fun openSheet(sheet: AppShellSheet) {
+        _activeSheet.value = sheet
+    }
+
+    /** シートを閉じる（ドラッグ下げ / スクリムタップ / ハードウェアバック）。 */
+    fun dismissSheet() {
+        _activeSheet.value = AppShellSheet.None
+    }
+
+    /**
+     * テーマを次モードへ即時切替し、永続化する（Req 3.3, 3.4）。
+     *
+     * @param currentlyDark 現在の表示が暗色であれば `true`。FOLLOW_SYSTEM 時の判定に使う。
+     */
+    fun toggleTheme(currentlyDark: Boolean) {
+        val next = nextThemeMode(themeMode.value, currentlyDark)
+        // Req 3.3: 画面表示には先行して新モードを適用させる。Flow が直後に同じ値を流すため、
+        // UI 側の `themeMode` も同じ値に追従する。永続化は viewModelScope 内で非同期に行う
+        // （NFR 2.1: 永続化未完了状態でも UI を新モードに更新する）。
+        viewModelScope.launch {
+            // NFR 2.2: silent fail を避けるため try/catch でログを残しつつ UI 側は新モードを保つ
+            runCatching { themeModeRepository.setMode(next) }
+                .onFailure { android.util.Log.w(TAG, "テーマモードの永続化に失敗: ${it.message}", it) }
+        }
+    }
+
     private companion object {
         const val STOP_TIMEOUT_MILLIS = 5_000L
+        const val TAG = "AppShellViewModel"
     }
 }
