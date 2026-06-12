@@ -47,6 +47,12 @@ class FeedmanException(
         const val CODE_NETWORK_ERROR: String = "NETWORK_ERROR"
 
         /**
+         * SPEC §4.3 のクールダウン応答（HTTP 429 / `POST /api/subscriptions/{id}/fetch`）の
+         * `code`。Issue #42 Req 3.1 で UI 側のスナックバー文言分岐に使う。
+         */
+        const val CODE_FEED_COOLDOWN: String = "FEED_COOLDOWN"
+
+        /**
          * [CODE_UNKNOWN_ERROR] フォールバック時にユーザー表示として返す既定文言（Req 3.3）。
          */
         const val FALLBACK_UNKNOWN_MESSAGE: String =

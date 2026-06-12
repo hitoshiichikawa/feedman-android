@@ -373,6 +373,235 @@ class FeedScreenViewModelTest {
         assertEquals(0, repo.resumeCalls.size)
     }
 
+    // ── Pull-to-refresh（Issue #42） ───────────────────────────
+
+    @Test
+    fun `onPullToRefresh で SubscriptionRepository_fetch が呼ばれ FetchSucceeded を流す_Issue42 Req 1_1 2_1`() =
+        runTest {
+            // Arrange
+            val source = MutableStateFlow(
+                listOf(subscription(feedId = "f1", id = "sub-f1", status = "active")),
+            )
+            val repo = StubSubscriptionRepository(source)
+            val vm = buildViewModel(subscriptionRepository = repo, feedId = "f1")
+            vm.subscription.test {
+                while (awaitItem() == null) Unit
+                cancelAndIgnoreRemainingEvents()
+            }
+            val received = mutableListOf<FeedScreenEvent>()
+            val job = CoroutineScope(Dispatchers.Unconfined).launch {
+                vm.events.collect { received += it }
+            }
+
+            // Act
+            vm.onPullToRefresh()
+
+            // Assert
+            assertEquals(1, repo.fetchCalls.size)
+            assertEquals("sub-f1", repo.fetchCalls[0])
+            assertTrue(received.isNotEmpty())
+            assertEquals(FeedScreenEvent.FetchSucceeded, received[0])
+            job.cancel()
+        }
+
+    @Test
+    fun `onPullToRefresh が FEED_COOLDOWN のとき FetchCooldown を retryAfterSeconds 付きで流す_Issue42 Req 3_1 3_2`() =
+        runTest {
+            // Arrange
+            val source = MutableStateFlow(
+                listOf(subscription(feedId = "f1", id = "sub-f1", status = "active")),
+            )
+            val repo = StubSubscriptionRepository(
+                source = source,
+                fetchError = FeedmanException(
+                    code = FeedmanException.CODE_FEED_COOLDOWN,
+                    errorMessage = "クールダウン中です。",
+                    retryAfterSeconds = 30,
+                    httpStatus = 429,
+                ),
+            )
+            val vm = buildViewModel(subscriptionRepository = repo, feedId = "f1")
+            vm.subscription.test {
+                while (awaitItem() == null) Unit
+                cancelAndIgnoreRemainingEvents()
+            }
+            val received = mutableListOf<FeedScreenEvent>()
+            val job = CoroutineScope(Dispatchers.Unconfined).launch {
+                vm.events.collect { received += it }
+            }
+
+            // Act
+            vm.onPullToRefresh()
+
+            // Assert
+            val cooldown = received.filterIsInstance<FeedScreenEvent.FetchCooldown>().first()
+            assertEquals(30, cooldown.retryAfterSeconds)
+            job.cancel()
+        }
+
+    @Test
+    fun `onPullToRefresh が FEED_COOLDOWN かつ retryAfterSeconds 欠落のとき null を流す_Issue42 Req 3_3`() =
+        runTest {
+            // Arrange
+            val source = MutableStateFlow(
+                listOf(subscription(feedId = "f1", id = "sub-f1", status = "active")),
+            )
+            val repo = StubSubscriptionRepository(
+                source = source,
+                fetchError = FeedmanException(
+                    code = FeedmanException.CODE_FEED_COOLDOWN,
+                    errorMessage = "クールダウン中です。",
+                    retryAfterSeconds = null,
+                    httpStatus = 429,
+                ),
+            )
+            val vm = buildViewModel(subscriptionRepository = repo, feedId = "f1")
+            vm.subscription.test {
+                while (awaitItem() == null) Unit
+                cancelAndIgnoreRemainingEvents()
+            }
+            val received = mutableListOf<FeedScreenEvent>()
+            val job = CoroutineScope(Dispatchers.Unconfined).launch {
+                vm.events.collect { received += it }
+            }
+
+            // Act
+            vm.onPullToRefresh()
+
+            // Assert
+            val cooldown = received.filterIsInstance<FeedScreenEvent.FetchCooldown>().first()
+            assertNull(cooldown.retryAfterSeconds)
+            job.cancel()
+        }
+
+    @Test
+    fun `onPullToRefresh がその他エラーのとき FetchFailed を message 付きで流す_Issue42 Req 4_1`() = runTest {
+        // Arrange
+        val source = MutableStateFlow(
+            listOf(subscription(feedId = "f1", id = "sub-f1", status = "active")),
+        )
+        val repo = StubSubscriptionRepository(
+            source = source,
+            fetchError = FeedmanException(
+                code = "UPSTREAM_ERROR",
+                errorMessage = "上流サービスでエラー",
+                httpStatus = 503,
+            ),
+        )
+        val vm = buildViewModel(subscriptionRepository = repo, feedId = "f1")
+        vm.subscription.test {
+            while (awaitItem() == null) Unit
+            cancelAndIgnoreRemainingEvents()
+        }
+        val received = mutableListOf<FeedScreenEvent>()
+        val job = CoroutineScope(Dispatchers.Unconfined).launch {
+            vm.events.collect { received += it }
+        }
+
+        // Act
+        vm.onPullToRefresh()
+
+        // Assert
+        val failed = received.filterIsInstance<FeedScreenEvent.FetchFailed>().first()
+        assertEquals("上流サービスでエラー", failed.message)
+        job.cancel()
+    }
+
+    @Test
+    fun `onPullToRefresh がネットワークエラーのとき FetchFailed をネットワーク文言で流す_Issue42 Req 4_3`() =
+        runTest {
+            // Arrange
+            val source = MutableStateFlow(
+                listOf(subscription(feedId = "f1", id = "sub-f1", status = "active")),
+            )
+            val repo = StubSubscriptionRepository(
+                source = source,
+                fetchError = FeedmanException(
+                    code = FeedmanException.CODE_NETWORK_ERROR,
+                    errorMessage = FeedmanException.FALLBACK_NETWORK_MESSAGE,
+                ),
+            )
+            val vm = buildViewModel(subscriptionRepository = repo, feedId = "f1")
+            vm.subscription.test {
+                while (awaitItem() == null) Unit
+                cancelAndIgnoreRemainingEvents()
+            }
+            val received = mutableListOf<FeedScreenEvent>()
+            val job = CoroutineScope(Dispatchers.Unconfined).launch {
+                vm.events.collect { received += it }
+            }
+
+            // Act
+            vm.onPullToRefresh()
+
+            // Assert
+            val failed = received.filterIsInstance<FeedScreenEvent.FetchFailed>().first()
+            assertEquals(FeedmanException.FALLBACK_NETWORK_MESSAGE, failed.message)
+            job.cancel()
+        }
+
+    @Test
+    fun `onPullToRefresh は進行中の追加起動を抑止する_Issue42 Req 1_4`() = runTest {
+        // Arrange: fetch をブロックする repo
+        val source = MutableStateFlow(
+            listOf(subscription(feedId = "f1", id = "sub-f1", status = "active")),
+        )
+        val repo = BlockingFetchRepository(source)
+        val vm = buildViewModel(subscriptionRepository = repo, feedId = "f1")
+        vm.subscription.test {
+            while (awaitItem() == null) Unit
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Act: 1 回目は進行中、2 回目以降は抑止される
+        vm.onPullToRefresh()
+        assertTrue(vm.fetchInProgress.value)
+        vm.onPullToRefresh()
+        vm.onPullToRefresh()
+
+        // Assert: fetch は 1 回だけ呼ばれる
+        assertEquals(1, repo.fetchInvocations)
+
+        // 後始末
+        repo.complete(source.value[0])
+    }
+
+    @Test
+    fun `onPullToRefresh は subscription null のとき no-op`() = runTest {
+        // Arrange
+        val source = MutableStateFlow<List<Subscription>>(emptyList())
+        val repo = StubSubscriptionRepository(source)
+        val vm = buildViewModel(subscriptionRepository = repo, feedId = "missing")
+        assertNull(vm.subscription.value)
+
+        // Act
+        vm.onPullToRefresh()
+
+        // Assert
+        assertEquals(0, repo.fetchCalls.size)
+        assertEquals(false, vm.fetchInProgress.value)
+    }
+
+    @Test
+    fun `onPullToRefresh 完了後 fetchInProgress が false に戻る_Issue42 NFR 1_2`() = runTest {
+        // Arrange
+        val source = MutableStateFlow(
+            listOf(subscription(feedId = "f1", id = "sub-f1", status = "active")),
+        )
+        val repo = StubSubscriptionRepository(source)
+        val vm = buildViewModel(subscriptionRepository = repo, feedId = "f1")
+        vm.subscription.test {
+            while (awaitItem() == null) Unit
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Act
+        vm.onPullToRefresh()
+
+        // Assert
+        assertEquals(false, vm.fetchInProgress.value)
+    }
+
     // ── 外部リンク失敗通知 ─────────────────────────────────────
 
     @Test
@@ -477,8 +706,10 @@ class FeedScreenViewModelTest {
     private class StubSubscriptionRepository(
         private val source: MutableStateFlow<List<Subscription>>,
         private val resumeError: Throwable? = null,
+        private val fetchError: Throwable? = null,
     ) : SubscriptionRepository {
         val resumeCalls: MutableList<String> = mutableListOf()
+        val fetchCalls: MutableList<String> = mutableListOf()
 
         override fun observeSubscriptions(): Flow<List<Subscription>> = source.asStateFlow()
 
@@ -495,6 +726,18 @@ class FeedScreenViewModelTest {
                 ?.copy(feedStatus = "active", errorMessage = null)
                 ?: error("resume: not found $subscriptionId")
             // 状態を内部 source にも反映する（実装と同じ流儀）
+            source.value = source.value.map {
+                if (it.id == subscriptionId) updated else it
+            }
+            return updated
+        }
+
+        override suspend fun fetch(subscriptionId: String): Subscription {
+            fetchCalls += subscriptionId
+            fetchError?.let { throw it }
+            val updated = source.value
+                .firstOrNull { it.id == subscriptionId }
+                ?: error("fetch: not found $subscriptionId")
             source.value = source.value.map {
                 if (it.id == subscriptionId) updated else it
             }
@@ -525,6 +768,29 @@ class FeedScreenViewModelTest {
         override suspend fun refresh() = Unit
 
         override suspend fun resume(subscriptionId: String): Subscription = signal.await()
+
+        fun complete(returnValue: Subscription) {
+            signal.complete(returnValue)
+        }
+    }
+
+    /** Issue #42 Req 1.4: fetch() を呼び出し側でブロックしたまま、進行中状態と重複抑止を観測する。 */
+    private class BlockingFetchRepository(
+        private val source: MutableStateFlow<List<Subscription>>,
+    ) : SubscriptionRepository {
+        private val signal = kotlinx.coroutines.CompletableDeferred<Subscription>()
+        var fetchInvocations: Int = 0
+            private set
+
+        override fun observeSubscriptions(): Flow<List<Subscription>> = source.asStateFlow()
+        override fun observeLoadState(): Flow<SubscriptionLoadState> =
+            flowOf(SubscriptionLoadState.Success)
+        override suspend fun refresh() = Unit
+
+        override suspend fun fetch(subscriptionId: String): Subscription {
+            fetchInvocations++
+            return signal.await()
+        }
 
         fun complete(returnValue: Subscription) {
             signal.complete(returnValue)
