@@ -60,6 +60,11 @@ import java.time.Clock
  * @property link 元記事 URL（SPEC §4.2 `CrossFeedItem.link`）。Issue #37 で外部リンク
  *   アイコンタップ時に Custom Tabs で開く対象として使う。既定値 `""` は mockMode や
  *   link を持たないテストフィクスチャ用の後方互換。
+ * @property relativeTimeOverride 相対日時表示の差し替え文字列（Issue #47 Req 4.6）。
+ *   非 null のとき [RelativeTimeFormatter] を呼ばず本値をそのままメタ行に描画する。
+ *   検索結果カードで [com.feedman.android.core.model.ItemSearchHit.publishedAt] が
+ *   `null`（= 日時不明）の場合に「日時不明」相当の代替表現を渡す用途。既定値 `null`
+ *   のとき従来通り [publishedAtIso] から相対日時を計算する（後方互換）。
  */
 data class ArticleCardModel(
     val id: String,
@@ -74,6 +79,7 @@ data class ArticleCardModel(
     val hatebuFetchedAt: String?,
     val summary: String = "",
     val link: String = "",
+    val relativeTimeOverride: String? = null,
 )
 
 /**
@@ -121,11 +127,16 @@ fun ArticleCard(
     val feedman = MaterialTheme.feedmanColors
 
     val cardAlpha: Float = if (model.isRead) feedman.readForegroundAlpha else 1.0f
-    val relativeTime: String = RelativeTimeFormatter.format(
-        publishedAtIso = model.publishedAtIso,
-        isDateEstimated = model.isDateEstimated,
-        clock = clock,
-    )
+    // Issue #47 Req 4.6: 検索結果で published_at が null の場合は relativeTimeOverride に
+    // 「日時不明」相当の代替文字列が入る。既存呼び出し側（タイムライン / フィード別 /
+    // スター）は relativeTimeOverride を渡さず、これまで通り publishedAtIso から相対日時を
+    // 計算する（後方互換）。
+    val relativeTime: String = model.relativeTimeOverride
+        ?: RelativeTimeFormatter.format(
+            publishedAtIso = model.publishedAtIso,
+            isDateEstimated = model.isDateEstimated,
+            clock = clock,
+        )
 
     Column(
         modifier = modifier

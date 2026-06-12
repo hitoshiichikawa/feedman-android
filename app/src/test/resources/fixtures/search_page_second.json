@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "01HSEARCH00000000000000002A",
+      "feed_id": "01HFEED000000000000000002A",
+      "title": "横断検索ヒット C（ページ 2）",
+      "link": "https://example.com/search-c",
+      "summary": "検索結果 2 ページ目の記事 C",
+      "published_at": "2026-06-11T07:00:00Z",
+      "is_date_estimated": false,
+      "is_read": false,
+      "is_starred": false,
+      "hatebu_count": 3,
+      "feed_title": "Kotlin Blog",
+      "favicon_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}

@@ -9,6 +9,8 @@ import com.feedman.android.core.data.FeedRegistrationRepositoryImpl
 import com.feedman.android.core.data.ItemDetailRepository
 import com.feedman.android.core.data.ItemDetailRepositoryImpl
 import com.feedman.android.core.data.ItemRepository
+import com.feedman.android.core.data.SearchRepository
+import com.feedman.android.core.data.SearchRepositoryImpl
 import com.feedman.android.core.data.StarredItemsRepository
 import com.feedman.android.core.data.StarredItemsRepositoryImpl
 import com.feedman.android.core.data.SubscriptionRepository
@@ -70,6 +72,18 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindStarredItemsRepository(impl: StarredItemsRepositoryImpl): StarredItemsRepository
+
+    /**
+     * 横断検索リポジトリ（Issue #47 Req 3 / Req 5 / NFR 2.1 / NFR 2.2）。
+     *
+     * `GET /api/items/search?q=&scope=global` を Pager データ層として独立に注入する。
+     * 横断検索画面（feature/search）はこの interface のみに依存し、
+     * `Flow<PagingData<ItemSearchHit>>` を購読する。`scope=feed` は v1 スコープ外
+     * （Req 7.2）。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindSearchRepository(impl: SearchRepositoryImpl): SearchRepository
 
     /**
      * 記事詳細・状態更新リポジトリ（Issue #35 Req 1 / 2 / 3）。

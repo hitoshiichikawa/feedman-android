@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "id": "01HSEARCH00000000000000001A",
+      "feed_id": "01HFEED000000000000000001A",
+      "title": "横断検索ヒット A（ページ 1）",
+      "link": "https://example.com/search-a",
+      "summary": "検索結果 1 ページ目の記事 A",
+      "published_at": "2026-06-11T09:00:00Z",
+      "is_date_estimated": false,
+      "is_read": false,
+      "is_starred": false,
+      "hatebu_count": 8,
+      "feed_title": "Android Developers",
+      "favicon_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    },
+    {
+      "id": "01HSEARCH00000000000000001B",
+      "feed_id": "01HFEED000000000000000001B",
+      "title": "横断検索ヒット B（ページ 1, favicon=null）",
+      "link": "https://example.com/search-b",
+      "summary": "favicon が null のケース",
+      "published_at": null,
+      "is_date_estimated": true,
+      "is_read": true,
+      "is_starred": true,
+      "hatebu_count": 0,
+      "feed_title": "Unknown Source",
+      "favicon_url": null
+    }
+  ],
+  "next_cursor": "2026-06-11T08:00:00Z:01HSEARCH00000000000000001B",
+  "has_more": true
+}
