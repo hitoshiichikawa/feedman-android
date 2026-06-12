@@ -85,6 +85,26 @@
     <string name="account_sheet_logout_button">ログアウト</string>
     <!-- Issue #50 Req 1.4 / NFR 1.1: ログアウト進行中の補助テキスト（スクリーンリーダー読み上げ） -->
     <string name="account_sheet_logout_in_progress">ログアウトしています</string>
+    <!-- Issue #51 Req 1.1 / 1.2: 退会導線ボタン文言（破壊的操作） -->
+    <string name="account_sheet_delete_button">退会（アカウント削除）</string>
+    <!-- Issue #51 Req 1.3 / 2.1: 第 1 段 説明ダイアログのタイトル -->
+    <string name="account_sheet_delete_confirm_title">退会しますか?</string>
+    <!-- Issue #51 Req 2.1: 第 1 段 説明ダイアログ本文（不可逆 + 全データ削除を明示） -->
+    <string name="account_sheet_delete_confirm_message">すべての購読と、既読・スター状態が削除されます。この操作は取り消せません。</string>
+    <!-- Issue #51 Req 2.2: 第 1 段 「次へ進む」ボタン -->
+    <string name="account_sheet_delete_next">次へ進む</string>
+    <!-- Issue #51 Req 2.2 / 2.4 / 2.5: 「キャンセル」ボタン（両ダイアログ共通） -->
+    <string name="account_sheet_delete_cancel">キャンセル</string>
+    <!-- Issue #51 Req 2.3: 第 2 段 最終確認ダイアログのタイトル -->
+    <string name="account_sheet_delete_final_title">本当に退会しますか?</string>
+    <!-- Issue #51 Req 2.3 / 2.4: 第 2 段 最終確認ダイアログ本文 -->
+    <string name="account_sheet_delete_final_message">退会するとアカウントは完全に削除され、ログイン画面に戻ります。</string>
+    <!-- Issue #51 Req 2.4 / 2.6: 第 2 段 「退会を実行する」確定ボタン -->
+    <string name="account_sheet_delete_confirm">退会する</string>
+    <!-- Issue #51 Req 3.1 / NFR 1.1: 進行中ローディングインジケータの a11y 説明 -->
+    <string name="account_sheet_delete_in_progress">退会処理中</string>
+    <!-- Issue #51 Req 5.4: 退会失敗時の汎用フォールバック文言（Coordinator.Failure.message が空の場合） -->
+    <string name="account_sheet_delete_error">退会に失敗しました</string>
     <!-- Req 5.4: フィード登録 placeholder シートの pane title / 仮文言 -->
     <string name="sheet_feed_registration_placeholder_title">フィードを登録</string>
     <string name="sheet_feed_registration_placeholder_body">フィード登録シートは Issue #44 で実装します。</string>

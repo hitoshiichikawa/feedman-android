@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -94,6 +95,10 @@ fun AccountSheet(
             onClose = viewModel::close,
             onRetry = viewModel::retry,
             onLogout = viewModel::logout,
+            onStartDeletion = viewModel::startDeletion,
+            onProceedToFinalConfirm = viewModel::proceedToFinalConfirm,
+            onCancelDeletion = viewModel::cancelDeletion,
+            onConfirmDeletion = viewModel::confirmDeletion,
         )
     }
 }
@@ -111,6 +116,10 @@ internal fun AccountSheetBody(
     onClose: () -> Unit,
     onRetry: () -> Unit,
     onLogout: () -> Unit,
+    onStartDeletion: () -> Unit,
+    onProceedToFinalConfirm: () -> Unit,
+    onCancelDeletion: () -> Unit,
+    onConfirmDeletion: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         AccountSheetHeader(
@@ -120,11 +129,64 @@ internal fun AccountSheetBody(
         )
         HorizontalDivider(color = MaterialTheme.feedmanColors.border)
         // Issue #50 Req 1.1 / 1.2 / 1.3 / 1.4: ログアウトボタン領域
+        // Issue #51 Req 3.3: 退会フロー中はログアウトを disabled にする
         AccountSheetLogoutSection(
             logoutInProgress = state.logoutInProgress,
+            deletionInFlight = state.deletion.isInFlight(),
             onLogout = onLogout,
         )
+        // Issue #51 Req 1.1 / 1.2: 退会導線（破壊的操作）
+        AccountSheetDeleteSection(
+            deletion = state.deletion,
+            logoutInProgress = state.logoutInProgress,
+            onStartDeletion = onStartDeletion,
+        )
     }
+
+    // Issue #51 Req 1.3 / 2.1 / 2.2 / 2.3 / 2.4 / 2.5 / 3.1 / 5.4: 二段確認ダイアログ
+    when (state.deletion) {
+        AccountSheetUiState.DeletionState.Idle -> Unit
+        AccountSheetUiState.DeletionState.ConfirmExplanation -> {
+            AccountSheetDeleteExplanationDialog(
+                onCancel = onCancelDeletion,
+                onProceed = onProceedToFinalConfirm,
+            )
+        }
+        AccountSheetUiState.DeletionState.ConfirmFinal -> {
+            AccountSheetDeleteFinalConfirmDialog(
+                inProgress = false,
+                onCancel = onCancelDeletion,
+                onConfirm = onConfirmDeletion,
+            )
+        }
+        AccountSheetUiState.DeletionState.InProgress -> {
+            // Req 3.1 / 3.2 / NFR 1.1: 最終確認ダイアログを進行中状態のまま保持する
+            // （確定ボタン disabled + ローディング表示）。Req 3.2 によりキャンセル不可。
+            AccountSheetDeleteFinalConfirmDialog(
+                inProgress = true,
+                onCancel = onCancelDeletion, // ViewModel 側で InProgress 中は no-op
+                onConfirm = onConfirmDeletion, // ViewModel 側で多重起動を防ぐ
+            )
+        }
+        is AccountSheetUiState.DeletionState.Error -> {
+            AccountSheetDeleteErrorDialog(
+                message = state.deletion.message,
+                onDismiss = onCancelDeletion,
+            )
+        }
+    }
+}
+
+/**
+ * Issue #51: 退会フロー中（確認段 + 進行中）かを返すヘルパー。Req 3.3 のログアウト disabled
+ * 判定に使う。Error 状態は確認段に再入できる文脈であり「退会フロー中」と見なさない。
+ */
+private fun AccountSheetUiState.DeletionState.isInFlight(): Boolean = when (this) {
+    AccountSheetUiState.DeletionState.ConfirmExplanation,
+    AccountSheetUiState.DeletionState.ConfirmFinal,
+    AccountSheetUiState.DeletionState.InProgress -> true
+    AccountSheetUiState.DeletionState.Idle,
+    is AccountSheetUiState.DeletionState.Error -> false
 }
 
 /**
@@ -143,8 +205,11 @@ internal fun AccountSheetBody(
 @Composable
 private fun AccountSheetLogoutSection(
     logoutInProgress: Boolean,
+    deletionInFlight: Boolean,
     onLogout: () -> Unit,
 ) {
+    // Issue #51 Req 3.3: 退会フロー中（確認段 / 進行中）はログアウトを disabled にする
+    val disabled = logoutInProgress || deletionInFlight
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -161,7 +226,7 @@ private fun AccountSheetLogoutSection(
     ) {
         TextButton(
             onClick = onLogout,
-            enabled = !logoutInProgress,
+            enabled = !disabled,
             modifier = Modifier
                 .sizeIn(
                     minHeight = MaterialTheme.feedmanDimens.minTapTarget,
@@ -170,7 +235,7 @@ private fun AccountSheetLogoutSection(
         ) {
             Text(
                 text = stringResource(R.string.account_sheet_logout_button),
-                color = if (logoutInProgress) {
+                color = if (disabled) {
                     MaterialTheme.feedmanColors.mutedFg
                 } else {
                     MaterialTheme.colorScheme.primary
@@ -208,6 +273,213 @@ const val ACCOUNT_SHEET_LOGOUT_BUTTON_TEST_TAG: String =
 /** ログアウト進行中インジケータの testTag。 */
 const val ACCOUNT_SHEET_LOGOUT_PROGRESS_TEST_TAG: String =
     "feature.account.AccountSheet.logout.progress"
+
+/** Issue #51 退会導線ボタンの testTag。 */
+const val ACCOUNT_SHEET_DELETE_BUTTON_TEST_TAG: String =
+    "feature.account.AccountSheet.delete.button"
+
+/** Issue #51 第 1 段 説明ダイアログの testTag。 */
+const val ACCOUNT_SHEET_DELETE_EXPLAIN_DIALOG_TEST_TAG: String =
+    "feature.account.AccountSheet.delete.dialog.explain"
+
+/** Issue #51 第 2 段 最終確認ダイアログの testTag。 */
+const val ACCOUNT_SHEET_DELETE_FINAL_DIALOG_TEST_TAG: String =
+    "feature.account.AccountSheet.delete.dialog.final"
+
+/** Issue #51 失敗エラーダイアログの testTag。 */
+const val ACCOUNT_SHEET_DELETE_ERROR_DIALOG_TEST_TAG: String =
+    "feature.account.AccountSheet.delete.dialog.error"
+
+/** Issue #51 進行中インジケータの testTag（最終確認ダイアログ内）。 */
+const val ACCOUNT_SHEET_DELETE_PROGRESS_TEST_TAG: String =
+    "feature.account.AccountSheet.delete.progress"
+
+/**
+ * Issue #51 Req 1.1 / 1.2: 退会導線セクション。
+ *
+ * - Req 1.1: シート表示中は常に表示
+ * - Req 1.2: 破壊的操作と識別できる視覚表現（warning/error カラー）
+ * - Req 3.3 補強: ログアウト進行中 / 退会フロー進行中はボタンを disabled にする
+ *   （UI 側のガード。ViewModel 側でも startDeletion が no-op で守られる）
+ */
+@Composable
+private fun AccountSheetDeleteSection(
+    deletion: AccountSheetUiState.DeletionState,
+    logoutInProgress: Boolean,
+    onStartDeletion: () -> Unit,
+) {
+    // 退会ボタンは Idle / Error のときのみ通常表示。確認段 / 進行中は disabled とする
+    // （確認段ではダイアログ表示中で、進行中はサーバー応答待ち）。
+    val enabledForStart = when (deletion) {
+        AccountSheetUiState.DeletionState.Idle,
+        is AccountSheetUiState.DeletionState.Error -> true
+        AccountSheetUiState.DeletionState.ConfirmExplanation,
+        AccountSheetUiState.DeletionState.ConfirmFinal,
+        AccountSheetUiState.DeletionState.InProgress -> false
+    } && !logoutInProgress
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(
+            onClick = onStartDeletion,
+            enabled = enabledForStart,
+            modifier = Modifier
+                .sizeIn(minHeight = MaterialTheme.feedmanDimens.minTapTarget)
+                .testTag(ACCOUNT_SHEET_DELETE_BUTTON_TEST_TAG),
+        ) {
+            Text(
+                text = stringResource(R.string.account_sheet_delete_button),
+                // Req 1.2: 破壊的操作として error カラーで表現
+                color = if (enabledForStart) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.feedmanColors.mutedFg
+                },
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+/**
+ * Issue #51 Req 1.3 / 2.1 / 2.2 / 2.5: 第 1 段 説明ダイアログ。
+ *
+ * - Req 2.1: 全購読・既読/スター状態が削除される / 取り消せない旨を提示
+ * - Req 2.2: 「次へ進む」「キャンセル」両操作を提示
+ * - Req 1.4: 本ダイアログでは DELETE を送らない
+ * - Req 2.5: ダイアログ外タップ / システム戻る → cancel
+ */
+@Composable
+private fun AccountSheetDeleteExplanationDialog(
+    onCancel: () -> Unit,
+    onProceed: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        modifier = Modifier.testTag(ACCOUNT_SHEET_DELETE_EXPLAIN_DIALOG_TEST_TAG),
+        title = {
+            Text(text = stringResource(R.string.account_sheet_delete_confirm_title))
+        },
+        text = {
+            Text(text = stringResource(R.string.account_sheet_delete_confirm_message))
+        },
+        confirmButton = {
+            TextButton(onClick = onProceed) {
+                Text(
+                    text = stringResource(R.string.account_sheet_delete_next),
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) {
+                Text(text = stringResource(R.string.account_sheet_delete_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Issue #51 Req 2.3 / 2.4 / 2.5 / 3.1 / 3.2 / NFR 1.1: 第 2 段 最終確認ダイアログ。
+ *
+ * - `inProgress = false`: 通常表示（「退会を実行する」「キャンセル」両ボタン活性）
+ * - `inProgress = true`: 進行中表示（確定ボタン disabled + ローディング、キャンセル disabled / Req 3.2）
+ */
+@Composable
+private fun AccountSheetDeleteFinalConfirmDialog(
+    inProgress: Boolean,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        // Req 3.2: 進行中は外部タップ / システム戻るでもキャンセルしない
+        onDismissRequest = { if (!inProgress) onCancel() },
+        modifier = Modifier
+            .testTag(ACCOUNT_SHEET_DELETE_FINAL_DIALOG_TEST_TAG)
+            .semantics {
+                if (inProgress) {
+                    liveRegion = LiveRegionMode.Polite
+                }
+            },
+        title = {
+            Text(text = stringResource(R.string.account_sheet_delete_final_title))
+        },
+        text = {
+            Text(text = stringResource(R.string.account_sheet_delete_final_message))
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !inProgress, // Req 3.2: 二重送信抑止
+            ) {
+                if (inProgress) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .testTag(ACCOUNT_SHEET_DELETE_PROGRESS_TEST_TAG)
+                            .semantics {
+                                contentDescription = ""
+                            },
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.account_sheet_delete_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, enabled = !inProgress) {
+                Text(text = stringResource(R.string.account_sheet_delete_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Issue #51 Req 5.4 / 5.5: 退会失敗エラーダイアログ。
+ *
+ * - 失敗 message を表示し、OK で Idle に戻す
+ * - ユーザーは再度退会ボタンから二段確認をやり直せる（Req 5.5）
+ */
+@Composable
+private fun AccountSheetDeleteErrorDialog(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier
+            .testTag(ACCOUNT_SHEET_DELETE_ERROR_DIALOG_TEST_TAG)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+            },
+        title = {
+            Text(text = stringResource(R.string.account_sheet_delete_error))
+        },
+        text = {
+            Text(
+                text = message.ifBlank {
+                    stringResource(R.string.account_sheet_delete_error)
+                },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "OK")
+            }
+        },
+    )
+}
 
 /**
  * ユーザー領域 + 閉じるアイコン（プロトタイプ FMAccountSheet の上段に相当）。
