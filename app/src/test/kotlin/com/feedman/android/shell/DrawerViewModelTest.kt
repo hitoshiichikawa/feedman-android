@@ -1,6 +1,7 @@
 package com.feedman.android.shell
 
 import app.cash.turbine.test
+import com.feedman.android.core.data.SubscriptionLoadState
 import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.model.Subscription
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +86,9 @@ class DrawerViewModelTest {
         val viewModel = DrawerViewModel(
             repository = object : SubscriptionRepository {
                 override fun observeSubscriptions(): Flow<List<Subscription>> = source.asStateFlow()
+                override fun observeLoadState(): Flow<SubscriptionLoadState> =
+                    flowOf(SubscriptionLoadState.Success)
+                override suspend fun refresh() = Unit
             },
         )
 
@@ -127,5 +131,8 @@ class DrawerViewModelTest {
         private val source: Flow<List<Subscription>>,
     ) : SubscriptionRepository {
         override fun observeSubscriptions(): Flow<List<Subscription>> = source
+        override fun observeLoadState(): Flow<SubscriptionLoadState> =
+            flowOf(SubscriptionLoadState.Success)
+        override suspend fun refresh() = Unit
     }
 }
