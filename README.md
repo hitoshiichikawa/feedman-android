@@ -90,6 +90,29 @@ feedman.baseUrl=https://dev.feedman.example.com
 - 本番接続情報は `local.properties` や CI secrets を経由して `-P` フラグで渡す運用とする
 - `local.properties` / `keystore.properties` / `google-services.json` は `.gitignore` 済み
 
+## CI（GitHub Actions）
+
+`.github/workflows/android-ci.yml` が以下のタイミングで起動し、
+`./gradlew build`（コンパイル / Android Lint / JVM 単体テスト）を実行する:
+
+- `main` を base とする Pull Request の作成・更新（`pull_request`）
+- `main` へのコミット push（`push`）
+
+実行環境は Ubuntu Latest + JDK 17（Temurin）。Gradle 依存・wrapper・build cache は
+`gradle/actions/setup-gradle` によって CI 実行間で再利用される。instrumented テスト
+（Android エミュレータ）は CI 必須にしない。
+
+ステータスチェック名は `Build and Unit Test`（job 名）として GitHub Checks API に
+報告される。**必須チェック化（branch protection / ruleset の required status check 指定）
+はリポジトリ管理者が GitHub Web UI で手動設定する運用**とし、本ワークフローは
+チェックの生成・公開までを担当する。
+
+ローカルで同等の検証を行うには:
+
+```bash
+./gradlew build
+```
+
 ## idd-claude 運用
 
 - Epic（`epic` ラベル）には `auto-dev` を付けない。実装は `task` ラベルの子 Issue 単位で投入する

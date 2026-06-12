@@ -1,0 +1,59 @@
+name: Android CI
+
+# =============================================================================
+# Android CI workflow
+#
+# PR 作成・更新時および main への push 時に `./gradlew build` を実行し、
+# コンパイル / Android Lint / JVM 単体テストを GitHub Checks API 上の
+# ステータスチェックとして報告する。
+#
+# - instrumented テスト（Android エミュレータ）は実行しない（NFR 1.2）
+# - リリース署名・API キーなどの秘匿値は要求しない（NFR 3.x）
+# - 必須チェック化（branch protection / ruleset での required check 指定）は
+#   リポジトリ管理者が手動で設定する運用とする
+#
+# 既存の `.github/workflows/issue-to-pr.yml`（idd-claude 用・既定無効）には
+# 触れない。本ワークフローのジョブ名 `android-build` は同ファイルの check
+# 名（claude-team-dev）と衝突しない一意な名称を採用している（Req 5.3）。
+# =============================================================================
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# 同一 ref で旧 run があれば cancel して最新のみ完走させる
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-build:
+    name: Build and Unit Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # gradle-build-action 後継。Gradle user home（依存解決結果・wrapper・
+      # build cache）をキャッシュし、失敗してもジョブ自体は継続する設計
+      # （actions/setup-gradle はキャッシュ I/O 失敗時に fail しない）。
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.base_ref != '' && github.head_ref != github.event.repository.default_branch }}
+
+      - name: Build (compile + Android Lint + JVM unit tests)
+        run: ./gradlew --no-daemon build
