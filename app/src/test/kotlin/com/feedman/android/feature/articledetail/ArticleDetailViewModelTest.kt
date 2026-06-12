@@ -2,8 +2,10 @@ package com.feedman.android.feature.articledetail
 
 import app.cash.turbine.test
 import com.feedman.android.core.data.ItemDetailRepository
+import com.feedman.android.core.data.ItemStateStore
 import com.feedman.android.core.model.ItemDetail
 import com.feedman.android.core.network.FeedmanException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -18,19 +20,18 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * [ArticleDetailViewModel] の単体テスト（Issue #36 / Req 1, 3, 4, 5, 6）。
+ * [ArticleDetailViewModel] の単体テスト（Issue #36 / Issue #38）。
  *
- * リポジトリは fake で差し替え、状態遷移と楽観的更新ロールバックを JVM 上で検証する。
- * CLAUDE.md テスト規約に従い、ViewModel が公開する `StateFlow` / `SharedFlow` の挙動を
- * Turbine で検証する。
+ * リポジトリは fake で差し替え、状態遷移と楽観的更新を JVM 上で検証する。
+ * ViewModel が公開する `StateFlow` / `SharedFlow` の挙動を Turbine で検証する。
  *
  * カバーする AC:
  * - Req 1.1: open(id) で Loading → Content に遷移
- * - Req 3.1: シート表示時に isRead が即時 true（楽観的）
- * - Req 3.2: 既読化サーバーリクエストが発火する（未読のときのみ）
+ * - Req 3.1 / Issue #38 Req 5.1: シート表示時に store.markRead 経由で isRead が即時 true
+ * - Req 3.2 / Issue #38 Req 5.2: 既読化サーバーリクエストが発火する（未読のときのみ）
  * - Req 3.3: 失敗時に isRead を元に戻して MarkReadFailed イベントを流す
- * - Req 3.5: 既に既読の記事を開いた場合 updateState を呼ばない（冪等）
- * - Req 4.4: toggleStar で即時 isStarred トグル
+ * - Req 3.5 / Issue #38 Req 5.3: 既に既読の記事を開いた場合 updateState を呼ばない（冪等）
+ * - Req 4.4 / Issue #38 Req 1.1: toggleStar で即時 isStarred トグル
  * - Req 4.5: スター更新失敗時にロールバック + StarUpdateFailed
  * - Req 4.3: markReadOnOpenExternal は未読のときのみ既読化、既読時は何もしない
  * - Req 6.2: 取得失敗で Error 状態に遷移
@@ -57,7 +58,7 @@ class ArticleDetailViewModelTest {
         // Arrange
         val detail = newDetail(id = "a1", isRead = false, isStarred = false)
         val repo = FakeRepository(getItemResult = Result.success(detail))
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
 
         // Act + Assert
         viewModel.uiState.test {
@@ -66,11 +67,11 @@ class ArticleDetailViewModelTest {
             // Loading が emit される場合 / されない場合がディスパッチャに依存するため両対応
             val loadingOrContent = awaitItem()
             val content = if (loadingOrContent is ArticleDetailUiState.Loading) awaitItem() else loadingOrContent
-            assertTrue("Content に遷移しているはず", content is ArticleDetailUiState.Content)
-            content as ArticleDetailUiState.Content
-            assertEquals("a1", content.detail.id)
-            assertEquals(true, content.isRead) // Req 3.1 / 3.4
-            assertEquals(false, content.isStarred)
+            // overlay 反映直後にもう一回 Content が来る可能性があるので最後の Content を取る
+            val finalContent = drainUntilContentWithRead(this, content, expectedRead = true)
+            assertEquals("a1", finalContent.detail.id)
+            assertEquals(true, finalContent.isRead) // Req 3.1 / 3.4
+            assertEquals(false, finalContent.isStarred)
             cancelAndIgnoreRemainingEvents()
         }
         // Req 3.2: 既読化リクエストが発火している
@@ -84,7 +85,7 @@ class ArticleDetailViewModelTest {
         // Arrange
         val detail = newDetail(id = "r1", isRead = true, isStarred = false)
         val repo = FakeRepository(getItemResult = Result.success(detail))
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
 
         // Act
         viewModel.open(itemId = "r1")
@@ -104,7 +105,7 @@ class ArticleDetailViewModelTest {
             getItemResult = Result.success(detail),
             updateStateError = FeedmanException(code = "X", errorMessage = "fail"),
         )
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
 
         // Act + Assert
         viewModel.events.test {
@@ -113,7 +114,7 @@ class ArticleDetailViewModelTest {
             assertEquals(ArticleDetailEvent.MarkReadFailed, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
-        // isRead はロールバック済み
+        // isRead はロールバック済み（overlay が baseline=false に戻っている）
         val state = viewModel.uiState.value
         assertTrue(state is ArticleDetailUiState.Content)
         assertEquals(false, (state as ArticleDetailUiState.Content).isRead)
@@ -127,7 +128,7 @@ class ArticleDetailViewModelTest {
         val repo = FakeRepository(
             getItemResult = Result.failure(FeedmanException(code = "X", errorMessage = "通信エラー")),
         )
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
 
         // Act
         viewModel.open(itemId = "e1")
@@ -150,7 +151,7 @@ class ArticleDetailViewModelTest {
                 Result.success(newDetail(id = "r2", isRead = true, isStarred = false)),
             ),
         )
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
 
         // Act
         viewModel.open(itemId = "r2")
@@ -170,7 +171,7 @@ class ArticleDetailViewModelTest {
         // Arrange
         val detail = newDetail(id = "s1", isRead = true, isStarred = false)
         val repo = FakeRepository(getItemResult = Result.success(detail))
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
         viewModel.open(itemId = "s1")
 
         // Act
@@ -192,7 +193,7 @@ class ArticleDetailViewModelTest {
             getItemResult = Result.success(detail),
             updateStateError = null, // 既読化は成功（既読なので呼ばれない）
         )
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
         viewModel.open(itemId = "s2")
 
         // 次回 updateState を失敗させる
@@ -213,11 +214,10 @@ class ArticleDetailViewModelTest {
 
     @Test
     fun `markReadOnOpenExternal は未読のときのみ既読化する_Req 4_3`() = runTest {
-        // 既読の Content では何もしないことを検証するため、Req 3.5 ケースと同じ前提で組む
         // Arrange
         val detail = newDetail(id = "o1", isRead = true, isStarred = false)
         val repo = FakeRepository(getItemResult = Result.success(detail))
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
         viewModel.open(itemId = "o1")
         // open 時点で isRead=true。updateState 呼び出しは 0 件（Req 3.5）。
         assertTrue(repo.updateStateCalls.isEmpty())
@@ -237,7 +237,7 @@ class ArticleDetailViewModelTest {
             getItemResult = Result.success(detail),
             updateStateError = FeedmanException(code = "X", errorMessage = "fail"),
         )
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
         viewModel.open(itemId = "o2")
         // open 時の既読化が失敗してロールバックされ、isRead=false に戻る
         val rolledBack = viewModel.uiState.value as ArticleDetailUiState.Content
@@ -263,7 +263,7 @@ class ArticleDetailViewModelTest {
         // Arrange
         val detail = newDetail(id = "d1", isRead = true, isStarred = false)
         val repo = FakeRepository(getItemResult = Result.success(detail))
-        val viewModel = ArticleDetailViewModel(repository = repo)
+        val viewModel = newViewModel(repo)
         viewModel.open(itemId = "d1")
         assertTrue(viewModel.uiState.value is ArticleDetailUiState.Content)
 
@@ -274,7 +274,49 @@ class ArticleDetailViewModelTest {
         assertEquals(ArticleDetailUiState.Hidden, viewModel.uiState.value)
     }
 
+    // ── Issue #38: 画面間同期 ────────────────────────────────────────
+
+    @Test
+    fun `他画面で store_setStarred されたとき詳細シートの isStarred が更新される_Issue38 Req 4_1_4_2`() = runTest {
+        // Arrange
+        val detail = newDetail(id = "sync", isRead = true, isStarred = false)
+        val repo = FakeRepository(getItemResult = Result.success(detail))
+        val store = ItemStateStore(repository = repo, scope = CoroutineScope(Dispatchers.Unconfined))
+        val viewModel = ArticleDetailViewModel(repository = repo, itemStateStore = store)
+        viewModel.open(itemId = "sync")
+        // open 後に Content / isStarred=false が反映されている
+        assertEquals(false, (viewModel.uiState.value as ArticleDetailUiState.Content).isStarred)
+
+        // Act: 別画面相当の経路で store にスター true を反映
+        store.setStarred(itemId = "sync", isStarred = true, baselineStarred = false)
+
+        // Assert: シートの uiState にも反映される（同じ store を共有しているため）
+        val state = viewModel.uiState.value as ArticleDetailUiState.Content
+        assertEquals(true, state.isStarred)
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────
+
+    private fun newViewModel(repo: ItemDetailRepository): ArticleDetailViewModel {
+        val store = ItemStateStore(repository = repo, scope = CoroutineScope(Dispatchers.Unconfined))
+        return ArticleDetailViewModel(repository = repo, itemStateStore = store)
+    }
+
+    /** Content への遷移を待ち、期待した isRead を持つ最新の Content を返す。 */
+    private suspend fun drainUntilContentWithRead(
+        scope: app.cash.turbine.ReceiveTurbine<ArticleDetailUiState>,
+        first: ArticleDetailUiState,
+        expectedRead: Boolean,
+    ): ArticleDetailUiState.Content {
+        var current = first as? ArticleDetailUiState.Content
+            ?: throw AssertionError("Content への遷移を期待したが $first だった")
+        // overlay 反映で追加 emit が来るかもしれないので、isRead=expected になるまで取る
+        while (current.isRead != expectedRead) {
+            val next = scope.awaitItem()
+            if (next is ArticleDetailUiState.Content) current = next
+        }
+        return current
+    }
 
     private fun newDetail(id: String, isRead: Boolean, isStarred: Boolean): ItemDetail =
         ItemDetail(
@@ -330,5 +372,4 @@ class ArticleDetailViewModelTest {
             // 既読化は成功させる
         }
     }
-
 }
