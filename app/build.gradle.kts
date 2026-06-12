@@ -100,6 +100,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.datastore.preferences)
 
     // Compose BOM-managed
     implementation(platform(libs.androidx.compose.bom))
@@ -126,4 +127,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    // DataStore preferences-core を JVM テストから利用するため別途宣言。
+    // 本体 implementation(`datastore-preferences`) は Android 用 artifact であり、
+    // 単体テスト（JVM）向けには tmp dir + `PreferenceDataStoreFactory` を使う
+    // `datastore-preferences-core` を併用する（Issue #25 NFR 3.2）。
+    testImplementation(libs.androidx.datastore.preferences.core)
 }
