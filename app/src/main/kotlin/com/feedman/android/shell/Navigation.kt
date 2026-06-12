@@ -75,12 +75,12 @@ fun Navigation(
             )
         }
         composable(AppRoute.Search.id) {
-            // Issue #47: 横断検索画面を起動。記事タップは v1 スコープ外（Req 7.3 / #48 で実装）
-            // のため、Navigation 側からは詳細シート起動コールバックを「設定はするが no-op に
-            // 倒しても動く」形で渡す（既存 onOpenItemDetail と同じ AppShell 配線を流用しても
-            // 良いが、本 Issue では明示的に no-op にして scope 境界を分かりやすくする）。
+            // Issue #48: 横断検索画面の結線。横断タイムライン / スター一覧と同じく、記事タップで
+            // AppShell 直下の ArticleDetailViewModel.open(itemId) を呼び、外部リンクアイコンで
+            // 共通 LinkOpener 経由の起動 + 既読化を行う（Req 1.1 / 2.1）。
             SearchScreen(
-                onOpenItemDetail = { /* Req 7.3 / #48 で実装。本 Issue では no-op */ },
+                onOpenItemDetail = { itemId -> onOpenItemDetail(itemId) },
+                onOpenExternalLink = onOpenExternalLink,
             )
         }
     }
