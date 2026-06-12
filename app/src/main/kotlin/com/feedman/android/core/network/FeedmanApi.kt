@@ -70,11 +70,16 @@ interface FeedmanApi {
      *
      * @param cursor 次ページ取得用の不透明トークン。初回は `null`。
      * @param limit ページサイズ。null の場合サーバー既定（50）が適用される。
+     * @param sinceTime セッション初回レスポンスの `since_time`（RFC3339）を後続ページに
+     *   引き継いで送信するためのクエリ。SPEC §4.1 / §10 受け入れ基準第 2 項により
+     *   無限スクロール中の新着判定基準時刻をセッション中固定するために使う。初回ロード時
+     *   は `null` を渡し、後続ページ取得で同一値を維持する（Issue #32 Req 2.1 / 2.2）。
      */
     @GET("api/items/cross-feed")
     suspend fun getCrossFeed(
         @Query("cursor") cursor: String? = null,
         @Query("limit") limit: Int? = null,
+        @Query("since_time") sinceTime: String? = null,
     ): CrossFeedPage
 
     // ---- 購読 ----------------------------------------------------------------

@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "id": "01HGY8K9ZQ4N7TXVY1F8M9R3X3",
+      "feed_id": "01HGY8K9ZQ4N7TXVY1F8M9R3FG",
+      "feed_title": "Kotlin Blog",
+      "feed_favicon_url": null,
+      "title": "横断新着 2 ページ目の記事",
+      "link": "https://example.com/cf-3",
+      "summary": "2 ページ目のサンプル",
+      "published_at": "2026-06-12T07:00:00Z",
+      "is_date_estimated": false,
+      "is_read": false,
+      "is_starred": false,
+      "hatebu_count": 4
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "since_time": "2099-12-31T00:00:00Z"
+}

@@ -1,5 +1,7 @@
 package com.feedman.android.di
 
+import com.feedman.android.core.data.CrossFeedRepository
+import com.feedman.android.core.data.CrossFeedRepositoryImpl
 import com.feedman.android.core.data.ItemRepository
 import com.feedman.android.core.data.SubscriptionRepository
 import com.feedman.android.core.data.fake.FakeItemRepository
@@ -32,4 +34,15 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSubscriptionRepository(impl: FakeSubscriptionRepository): SubscriptionRepository
+
+    /**
+     * 横断新着タイムラインの実 API 用リポジトリ（Issue #32 Req 1〜5 / NFR 2.2）。
+     *
+     * [bindItemRepository] のモック実装（[FakeItemRepository]）とは別系統で、Pager 用の
+     * cross-feed データ層として独立に注入される。タイムライン UI（#33）はこの interface
+     * のみに依存し、`Flow<PagingData<CrossFeedItem>>` を購読する。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindCrossFeedRepository(impl: CrossFeedRepositoryImpl): CrossFeedRepository
 }
