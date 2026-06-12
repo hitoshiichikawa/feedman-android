@@ -131,6 +131,9 @@ dependencies {
     // Paging 3 (Issue #18: カーソルページング基盤)
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.paging.common)
+    // paging-compose: LazyColumn + collectAsLazyPagingItems で PagingData を消費する
+    // タイムライン UI（Issue #33 Req 5.1〜5.4）のために配線する。
+    implementation(libs.androidx.paging.compose)
 
     // Coil (Issue #26: data URL の favicon 復号 + Compose 連携)
     // — gradle/libs.versions.toml で coil = 2.7.0 を宣言済み。
