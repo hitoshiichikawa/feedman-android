@@ -26,6 +26,7 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.feedman.android.R
+import com.feedman.android.core.data.ItemStateFailure
 import com.feedman.android.core.ui.ArticleCard
 import com.feedman.android.core.ui.ArticleCardModel
 import com.feedman.android.core.ui.DefaultEmptyStateIcon
@@ -92,34 +93,50 @@ fun TimelineScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val refreshErrorMessage = stringResource(id = R.string.timeline_refresh_error)
     val markReadFailedMessage = stringResource(id = R.string.article_detail_mark_read_failed)
+    val starUpdateFailedMessage = stringResource(id = R.string.article_detail_star_update_failed)
     val openLinkFailedMessage = stringResource(id = R.string.timeline_open_link_failed)
 
-    // Issue #37 Req 2.4 / Req 3.3 / Req 4.x: ViewModel の externalLinkEvents を購読して
-    // snackbar 通知に変換する。
+    // Issue #37 Req 3.3 / Req 4.x: 外部リンク起動自体の失敗（InvalidUrl / NoAppToHandle）通知。
+    // 既読化・スター更新の失敗は ItemStateStore.failures（itemStateFailures）に統一されている。
     LaunchedEffect(viewModel) {
         viewModel.externalLinkEvents.collect { event ->
             val message = when (event) {
-                TimelineExternalLinkEvent.MarkReadFailed -> markReadFailedMessage
                 TimelineExternalLinkEvent.OpenLinkFailed -> openLinkFailedMessage
+                TimelineExternalLinkEvent.MarkReadFailed -> markReadFailedMessage
             }
             FeedmanSnackbar.show(snackbarHostState, message)
         }
     }
 
-    // Issue #37: ArticleCard の onOpenLink 結線。LinkOpener の結果を ViewModel に伝え、
-    // 成功時のみ既読化、失敗時は ViewModel 経由で通知する。
-    val onExternalLinkClicked: (itemId: String, link: String) -> Unit = { itemId, link ->
-        when (onOpenExternalLink(link)) {
-            OpenLinkResult.OpenedWithCustomTabs,
-            OpenLinkResult.OpenedWithFallback -> {
-                viewModel.markReadOnExternalOpen(itemId = itemId)
+    // Issue #38 Req 2.3: ItemStateStore の楽観的更新失敗を購読して snackbar 通知に変換する。
+    // タイムラインで生じたトグルだけでなく、シート側で生じたトグルもここで観測される
+    // （store は singleton で全画面共通のため）。Req 4.x の画面間同期の一部。
+    LaunchedEffect(viewModel) {
+        viewModel.itemStateFailures.collect { failure ->
+            val message = when (failure.kind) {
+                ItemStateFailure.Kind.Read -> markReadFailedMessage
+                ItemStateFailure.Kind.Star -> starUpdateFailedMessage
             }
-            is OpenLinkResult.InvalidUrl,
-            OpenLinkResult.NoAppToHandle -> {
-                viewModel.notifyExternalLinkFailed()
-            }
+            FeedmanSnackbar.show(snackbarHostState, message)
         }
     }
+
+    // Issue #37 / #38: ArticleCard の onOpenLink 結線。LinkOpener の結果を ViewModel に伝え、
+    // 成功時のみ既読化（store.markRead 経由）、失敗時は ViewModel 経由で通知する。
+    // currentIsRead はカード描画時の値（overlay 合成済み）を渡し、冪等性を保証する。
+    val onExternalLinkClicked: (itemId: String, link: String, currentIsRead: Boolean) -> Unit =
+        { itemId, link, currentIsRead ->
+            when (onOpenExternalLink(link)) {
+                OpenLinkResult.OpenedWithCustomTabs,
+                OpenLinkResult.OpenedWithFallback -> {
+                    viewModel.markReadOnExternalOpen(itemId = itemId, currentIsRead = currentIsRead)
+                }
+                is OpenLinkResult.InvalidUrl,
+                OpenLinkResult.NoAppToHandle -> {
+                    viewModel.notifyExternalLinkFailed()
+                }
+            }
+        }
 
     TimelineListContent(
         items = pagingItems,
@@ -128,6 +145,9 @@ fun TimelineScreen(
         refreshErrorMessage = refreshErrorMessage,
         onOpenItemDetail = onOpenItemDetail,
         onOpenExternalLink = onExternalLinkClicked,
+        onStarToggle = { itemId, newState, baseline ->
+            viewModel.toggleStar(itemId = itemId, newState = newState, baselineStarred = baseline)
+        },
         modifier = modifier,
     )
 }
@@ -144,7 +164,8 @@ internal fun TimelineListContent(
     snackbarHostState: SnackbarHostState,
     refreshErrorMessage: String,
     onOpenItemDetail: (itemId: String) -> Unit,
-    onOpenExternalLink: (itemId: String, link: String) -> Unit,
+    onOpenExternalLink: (itemId: String, link: String, currentIsRead: Boolean) -> Unit,
+    onStarToggle: (itemId: String, newState: Boolean, baselineStarred: Boolean) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val refresh = items.loadState.refresh
@@ -208,6 +229,7 @@ internal fun TimelineListContent(
                         clock = clock,
                         onOpenItemDetail = onOpenItemDetail,
                         onOpenExternalLink = onOpenExternalLink,
+                        onStarToggle = onStarToggle,
                     )
                 }
             }
@@ -232,7 +254,8 @@ private fun TimelineList(
     append: LoadState,
     clock: Clock,
     onOpenItemDetail: (itemId: String) -> Unit,
-    onOpenExternalLink: (itemId: String, link: String) -> Unit,
+    onOpenExternalLink: (itemId: String, link: String, currentIsRead: Boolean) -> Unit,
+    onStarToggle: (itemId: String, newState: Boolean, baselineStarred: Boolean) -> Unit,
 ) {
     val footerState = resolveListFooterState(
         isAppendLoading = append is LoadState.Loading,
@@ -257,12 +280,14 @@ private fun TimelineList(
             ArticleCard(
                 model = card,
                 onOpen = { id -> onOpenItemDetail(id) },
-                onStarToggle = { _, _ ->
-                    // Issue #38 でサーバー反映を結線する。本 Issue では no-op。
+                // Issue #38 Req 1.1 / 4.4: ArticleCard が「新しい状態」を渡してくる前提で、
+                // baseline には現在のカード値（overlay 合成済み）を渡しロールバック先を一意化する。
+                onStarToggle = { id, newState ->
+                    onStarToggle(id, newState, card.isStarred)
                 },
                 clock = clock,
-                // Issue #37: ArticleCardModel.link を引数に追加して渡す
-                onOpenLink = { id -> onOpenExternalLink(id, card.link) },
+                // Issue #37 / #38: 外部リンク既読化のため currentIsRead を渡す（冪等判定に使う）。
+                onOpenLink = { id -> onOpenExternalLink(id, card.link, card.isRead) },
             )
         }
         // フッタ状態に応じて末尾アイテムを挿入する（排他 / NFR 2.2）。
