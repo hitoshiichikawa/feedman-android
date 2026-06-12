@@ -6,10 +6,13 @@ import com.feedman.android.core.data.ItemDetailRepository
 import com.feedman.android.core.data.ItemDetailRepositoryImpl
 import com.feedman.android.core.data.ItemRepository
 import com.feedman.android.core.data.SubscriptionRepository
+import com.feedman.android.core.data.SubscriptionRepositoryImpl
 import com.feedman.android.core.data.fake.FakeItemRepository
 import com.feedman.android.core.data.fake.FakeSubscriptionRepository
+import com.feedman.android.core.model.AppConfig
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
@@ -28,14 +31,6 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindItemRepository(impl: FakeItemRepository): ItemRepository
-
-    /**
-     * 購読フィードのリポジトリを Fake にバインドする（Issue #30 / Req 5.1, 5.2 / NFR 3.1）。
-     * #39 で実 API 実装に差し替える際は本行 1 つを書き換えれば足りる。
-     */
-    @Binds
-    @Singleton
-    abstract fun bindSubscriptionRepository(impl: FakeSubscriptionRepository): SubscriptionRepository
 
     /**
      * 横断新着タイムラインの実 API 用リポジトリ（Issue #32 Req 1〜5 / NFR 2.2）。
@@ -57,4 +52,29 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindItemDetailRepository(impl: ItemDetailRepositoryImpl): ItemDetailRepository
+
+    companion object {
+
+        /**
+         * 購読リポジトリの解決（Issue #30 + Issue #39 / Req 3.1, 3.2, 3.3, 3.4 / NFR 2.3）。
+         *
+         * `AppConfig.mockMode` に応じて Fake / 実 API 実装を選択する。切替判断は純粋関数
+         * [selectSubscriptionRepository] に切り出し、本モジュールは「どの依存をフレームワーク
+         * から取り寄せるか」だけを担う（NFR 2.3: 単一箇所での差し替え）。
+         *
+         * - `mockMode = true`  → `FakeSubscriptionRepository`（Req 3.1, 3.2: API を呼ばない）
+         * - `mockMode = false` → `SubscriptionRepositoryImpl`（Req 3.3: 実 API 経路）
+         */
+        @Provides
+        @Singleton
+        fun provideSubscriptionRepository(
+            appConfig: AppConfig,
+            fake: FakeSubscriptionRepository,
+            real: SubscriptionRepositoryImpl,
+        ): SubscriptionRepository = selectSubscriptionRepository(
+            mockMode = appConfig.mockMode,
+            fake = fake,
+            real = real,
+        )
+    }
 }
