@@ -99,6 +99,49 @@ interface SubscriptionRepository {
         )
 
     /**
+     * Issue #43 Req 2.4 / 5.2: 当該購読のフェッチ間隔設定を更新する。
+     *
+     * SPEC §4.2 `PUT /api/subscriptions/{id}/settings` を呼び出し、成功時は返ってきた
+     * Subscription を内部の `_subscriptions` の該当 entry に置換して反映する（observe*
+     * Flow が新しい fetchIntervalMinutes 値を流す）。
+     *
+     * 失敗時は [com.feedman.android.core.network.FeedmanException] を呼び出し元へ投げ返す
+     * （UI 側で旧値ロールバック + エラー表示。Req 2.6 / 5.1 / 5.2）。
+     *
+     * 既定実装は [UnsupportedOperationException] を投げる（Fake が選択的に override 可能）。
+     *
+     * @param subscriptionId 対象 [com.feedman.android.core.model.Subscription.id]
+     * @param fetchIntervalMinutes 新しいフェッチ間隔（30 / 60 / 180 / 360 のいずれか想定）
+     * @return 設定更新後の最新 Subscription
+     */
+    suspend fun updateSettings(
+        subscriptionId: String,
+        fetchIntervalMinutes: Int,
+    ): Subscription =
+        throw UnsupportedOperationException(
+            "SubscriptionRepository.updateSettings はこの実装でサポートされていません",
+        )
+
+    /**
+     * Issue #43 Req 4.3 / 4.4: 当該購読を解除する（フィード自体は保持。SPEC §4.2 表注記）。
+     *
+     * SPEC §4.2 `DELETE /api/subscriptions/{id}` を呼び出す。成功時は内部の `_subscriptions`
+     * から該当 entry を除去し、observe* Flow が新しいリスト（当該フィードが消えた状態）を
+     * 流す（Req 4.4: ドロワーの購読一覧から自動的に除去される）。
+     *
+     * 失敗時は [com.feedman.android.core.network.FeedmanException] を呼び出し元へ投げ返す
+     * （UI 側でリスト変更を行わず、エラー表示する。Req 4.7 / 5.1 / 5.2）。
+     *
+     * 既定実装は [UnsupportedOperationException] を投げる。
+     *
+     * @param subscriptionId 対象 [com.feedman.android.core.model.Subscription.id]
+     */
+    suspend fun unsubscribe(subscriptionId: String): Unit =
+        throw UnsupportedOperationException(
+            "SubscriptionRepository.unsubscribe はこの実装でサポートされていません",
+        )
+
+    /**
      * Issue #42 Req 1.1 / 2.1 / 2.3: 当該フィードの手動フェッチを要求する。
      *
      * SPEC §4.2 `POST /api/subscriptions/{id}/fetch` を呼び出す。成功時は当該購読の

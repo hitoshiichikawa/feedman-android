@@ -3,6 +3,7 @@ package com.feedman.android.core.data
 import com.feedman.android.core.model.Subscription
 import com.feedman.android.core.network.FeedmanApi
 import com.feedman.android.core.network.FeedmanException
+import com.feedman.android.core.network.SubscriptionSettingsRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -118,6 +119,49 @@ class SubscriptionRepositoryImpl @Inject constructor(
             }
         }
         return updated
+    }
+
+    /**
+     * Issue #43 Req 2.4 / 5.2: 購読設定（フェッチ間隔）を更新する。
+     *
+     * `PUT /api/subscriptions/{id}/settings` を呼び出し、成功時は返ってきた Subscription を
+     * 内部 `_subscriptions` の該当 entry に置換して反映する（observeSubscriptions /
+     * observeFeed 経由でドロワー / 設定シート両方に新値が流れる）。
+     *
+     * 失敗時は [FeedmanException] を呼び出し元へ透過する（UI 側で旧値ロールバック）。
+     * 本メソッドは [refreshMutex] でガードしない。
+     */
+    override suspend fun updateSettings(
+        subscriptionId: String,
+        fetchIntervalMinutes: Int,
+    ): Subscription {
+        val updated = api.updateSubscriptionSettings(
+            subscriptionId = subscriptionId,
+            request = SubscriptionSettingsRequest(fetchIntervalMinutes = fetchIntervalMinutes),
+        )
+        _subscriptions.update { current ->
+            current.map { existing ->
+                if (existing.id == subscriptionId) updated else existing
+            }
+        }
+        return updated
+    }
+
+    /**
+     * Issue #43 Req 4.3 / 4.4: 購読解除を実行する。
+     *
+     * `DELETE /api/subscriptions/{id}` を呼び出し、成功時は内部 `_subscriptions` から該当
+     * entry を除去する。observeSubscriptions Flow が新しい（当該フィードを含まない）リストを
+     * 流すため、ドロワーの購読一覧は自動的に当該フィードを表示しなくなる（Req 4.4）。
+     *
+     * 失敗時は [FeedmanException] を呼び出し元へ透過する（UI 側でリスト・画面遷移を
+     * 変更せずエラー表示。Req 4.7）。
+     */
+    override suspend fun unsubscribe(subscriptionId: String) {
+        api.deleteSubscription(subscriptionId)
+        _subscriptions.update { current ->
+            current.filterNot { it.id == subscriptionId }
+        }
     }
 
     /**
