@@ -13,7 +13,7 @@ plugins {
  * `./gradlew build -Pfeedman.baseUrl=https://example.invalid`
  */
 val defaultBaseUrl: String = (findProperty("feedman.baseUrl") as String?)
-    ?: "https://stg-feed.markte-river.net"
+    ?: "https://stg-feed.market-river.net"
 
 /**
  * Default mockMode when `feedman.mockMode` Gradle property is not provided (Req 5.4).

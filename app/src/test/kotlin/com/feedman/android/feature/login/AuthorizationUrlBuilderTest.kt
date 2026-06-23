@@ -15,7 +15,7 @@ class AuthorizationUrlBuilderTest {
     @Test
     fun `Req 2_1 build appends path to baseUrl without trailing slash`() {
         // Arrange
-        val baseUrl = "https://stg-feed.markte-river.net"
+        val baseUrl = "https://stg-feed.market-river.net"
 
         // Act
         val url = AuthorizationUrlBuilder.build(baseUrl = baseUrl, codeChallenge = "abc")
@@ -23,14 +23,14 @@ class AuthorizationUrlBuilderTest {
         // Assert
         assertTrue(
             "URL must start with `<baseUrl>/auth/google/login`",
-            url.startsWith("https://stg-feed.markte-river.net/auth/google/login?"),
+            url.startsWith("https://stg-feed.market-river.net/auth/google/login?"),
         )
     }
 
     @Test
     fun `Req 2_1 build collapses trailing slash on baseUrl`() {
         // Arrange
-        val baseUrl = "https://stg-feed.markte-river.net/"
+        val baseUrl = "https://stg-feed.market-river.net/"
 
         // Act
         val url = AuthorizationUrlBuilder.build(baseUrl = baseUrl, codeChallenge = "abc")
@@ -40,7 +40,7 @@ class AuthorizationUrlBuilderTest {
             "URL must not contain `//auth/google/login`",
             !url.contains("//auth/google/login"),
         )
-        assertTrue(url.startsWith("https://stg-feed.markte-river.net/auth/google/login?"))
+        assertTrue(url.startsWith("https://stg-feed.market-river.net/auth/google/login?"))
     }
 
     @Test

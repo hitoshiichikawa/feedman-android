@@ -5,7 +5,7 @@
 チェックボックスをすべて埋めてください。
 
 - 想定実施時期: v1 全機能 Issue（#16〜#53）が main にマージされ、Bearer トークン認証サーバー
-  （`hitoshiichikawa/feedman` 側の追加実装）がステージング環境（`https://stg-feed.markte-river.net`）に
+  （`hitoshiichikawa/feedman` 側の追加実装）がステージング環境（`https://stg-feed.market-river.net`）に
   デプロイされた直後
 - 想定実施環境: 実機（API 26 以上）/ Android Studio で `app` モジュールを `Run`、もしくは
   `./gradlew assembleDebug` で生成した APK を `adb install`
