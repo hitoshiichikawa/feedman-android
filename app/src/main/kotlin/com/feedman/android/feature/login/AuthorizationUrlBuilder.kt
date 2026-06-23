@@ -36,7 +36,7 @@ object AuthorizationUrlBuilder {
      *   同じ結果を返す）
      * - [codeChallenge] / [method] はパーセントエンコードしてから URL に埋め込む
      *
-     * @param baseUrl SERVER.md §1.2 のサーバー base URL（例: `https://stg-feed.markte-river.net`）
+     * @param baseUrl SERVER.md §1.2 のサーバー base URL（例: `https://stg-feed.market-river.net`）
      * @param codeChallenge PKCE S256 challenge（[com.feedman.android.core.auth.PkcePair.codeChallenge]）
      * @param method challenge method。既定は `S256`。
      * @return Custom Tabs に渡す完全な URL 文字列
